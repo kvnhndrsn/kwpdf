@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><script src="/.nekoweb-api/static/site.js" defer></script><script src="/.nekoweb-api/static/site.js" defer></script><script src="/.nekoweb-api/static/site.js" defer></script><script src="/.nekoweb-api/static/site.js" defer></script>
+<script src="/.nekoweb-api/static/site.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <meta charset="UTF-8">
+    <title>PDF Scanner</title>
+    <style>
+        :root { --sidebar-width: 380px; --accent: #ccebb8; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; display: flex; height: 100vh; background: #ecf0f1; }
+
+        /* Sidebar Styles */
+        .sidebar { width: var(--sidebar-width); background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; box-shadow: 4px 0 10px rgba(0,0,0,0.05); flex-shrink: 0; }
+        .header { padding: 2px; background: var(--accent); color: white; }
+        .file-controls { padding: -15px; border-bottom: 1px solid #eee; }
+        .results-area { flex: 1; overflow-y: auto; padding: 10px; }
+
+        /* Document Cards */
+        .doc-card { border: 1px solid #5abc1a; border-radius: 8px; padding: 5px; margin-bottom: 2px; cursor: pointer; transition: 0.2s; }
+        .doc-card:hover { border-color: #5abc1a; background: #f9f9f9; }
+        .doc-card.active { border-left: 6px solid #5abc1a; background: #ccebb8; }
+        .doc-name { font-weight: 600; font-size: 0.8rem; margin-bottom: 5px; color: #2d3436; word-break: break-word; }
+
+        /* Badges */
+        .badge-grid { display: flex; flex-wrap: wrap; gap: 3px; }
+        .badge { font-size: 0.85rem; padding: 3px 7px; border-radius: 18px; background: #a1d67d; color: black; cursor: pointer; user-select: none; }
+        .badge.empty { background: #b2bec3; opacity: 0.5; cursor: default; }
+        .badge:not(.empty):hover { background: #5abc1a; transform: translateY(-1px); }
+
+        /* Status message */
+        .status-msg { text-align: center; color: #b2bec3; margin-top: 50px; }
+        .scanning-msg { color: #636e72; font-style: italic; }
+
+        /* The Viewer Container */
+        .viewer-container { flex: 1; background: #525659; position: relative; overflow: hidden; }
+        iframe { width: 100%; height: 100%; border: none; }
+
+        /* Progress bar */
+        .progress-bar-wrap { height: 5px; background: #ecf0f1; }
+        .progress-bar { height: 100%; background: #a1d67d; width: 0%; transition: width 0.4s; }
+
+        /* Update your main container to a grid */
+body {
+    display: flex; /* Switch from grid to flex for easier manual resizing */
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+}
+
+/* Ensure the sidebar has the ID 'sidebar' in your HTML as well */
+#sidebar {
+    width: 250px;
+    min-width: 150px;
+    max-width: 800px;
+    background: white;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: relative;
+}
+
+#resizer {
+    width: 6px;
+    cursor: col-resize;
+    background: #dfe6e9;
+    transition: background 0.2s;
+    z-index: 10;
+    flex-shrink: 0;
+}
+
+#resizer:hover, .dragging #resizer {
+    background: #8cc543;
+    width: 6px;
+}
+
+/* This class is added to the body during dragging to keep things smooth */
+.dragging { cursor: col-resize; }
+.dragging iframe { pointer-events: none; } /* THE SECRET SAUCE */
+
+#pdfFrame {
+    flex-grow: 1; /* Takes up all remaining space */
+    border: none;
+}
+
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="keywords.js"></script>
+
+
+
+</head>
+<body>
+
+
+<div id="sidebar" class="sidebar">
+    <div class="header">
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+
+    <div>
+    <button onclick="toggleKeywordManager()" style="background:#a1d67d; border:1px solid white; color:black; border-radius:4px; cursor:pointer; font-size:1.0rem; padding:4px 8px;">Keywords</button>
+
+    <button onclick="document.getElementById('folderInput').click()"
+style="background:#a1d67d; border:1px solid white; color:black; border-radius:4px; cursor:pointer; font-size:1.0rem; padding:4px 8px; margin-top:5px">
+Select Folder
+</button>
+</div>
+    <div id="keywordManager" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; justify-content:center; align-items:center;">
+    <div style="background:white; padding:25px; border-radius:8px; width:400px; max-height:80% ; display:flex; flex-direction:column;">
+        <h3>Manage Keywords</h3>
+        <p style="font-size:0.8rem; color:#666;">Add one per line</p>
+        <textarea id="keywordInput" style="flex:1; min-height:300px; padding:10px; font-family:monospace;"></textarea>
+        <div style="margin-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+            <button onclick="toggleKeywordManager()" style="padding:8px 15px; border:none; cursor:pointer;">Cancel</button>
+            <button onclick="updateKeywordsFromUI()" style="padding:8px 15px; background:#3498db; color:white; border:none; cursor:pointer; border-radius:4px;">Save & Apply</button>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<div class="progress-bar-wrap" style="margin-top: 6px; border-radius: 2px; overflow: hidden;">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <input type="file" id="folderInput" webkitdirectory directory multiple accept="application/pdf" style="margin-top:0; width: 100%; display:none">
+
+
+    </div>
+
+
+
+
+    <div id="results" class="results-area">
+        <h1 class="status-msg">⤓</h1>
+        <h1 class="status-msg">Drop a folder to begin scanning</h1>
+    </div>
+    <p style="font-size:0.85rem;padding:0px 0px; gap:0px;bottom:0;position: absolute; margin: 0; backdrop-filter: blur(10px);">
+    Kevin Henderson - <b>31/03/2026</b></p>
+</div>
+
+
+<div id="resizer"></div>
+
+<div class="viewer-container">
+    <div id="navBar" style="display:none; position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(44,62,80,0.92); color:white; border-radius:24px; padding:6px 14px; gap:10px; align-items:center; font-size:0.85rem; box-shadow:0 2px 10px rgba(0,0,0,0.4); backdrop-filter:blur(4px);">
+        <button onclick="findPrev()" title="Previous match" style="background:none;border:none;color:white;cursor:pointer;font-size:1rem;padding:0 4px;">&#8593;</button>
+        <span>Searching: <strong id="navLabel"></strong></span>
+        <button onclick="findNext()" title="Next match" style="background:none;border:none;color:white;cursor:pointer;font-size:1rem;padding:0 4px;">&#8595;</button>
+        <button onclick="clearSearch()" title="Clear search" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.9rem;padding:0 4px;margin-left:4px;">&#10005;</button>
+    </div>
+    <iframe id="pdfFrame" src="about:blank"></iframe>
+</div>
+
+<script>
+// Configure PDF.js Worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// 1. GLOBAL STATE
+// Note: KEYWORDS is now managed by keywords.js or the manager below
+let objectUrls = [];
+let activeKeyword = "";
+const VIEWER_PATH = 'pdfjs/web/viewer.html';
+
+// DOM Elements
+const frame = document.getElementById('pdfFrame');
+const resultsArea = document.getElementById('results');
+const progressBar = document.getElementById('progressBar');
+const sidebar = document.getElementById('sidebar');
+
+// 2. KEYWORD MANAGER LOGIC
+function toggleKeywordManager() {
+    const modal = document.getElementById('keywordManager');
+    const area = document.getElementById('keywordInput');
+    if (modal.style.display === 'none' || modal.style.display === '') {
+        area.value = KEYWORDS.join('\n');
+        modal.style.display = 'flex';
+    } else {
+        modal.style.display = 'none';
+    }
+}
+
+function updateKeywordsFromUI() {
+    const area = document.getElementById('keywordInput');
+
+    // 1. Update the global variable in memory
+    window.KEYWORDS = area.value.split('\n').map(k => k.trim()).filter(k => k !== "");
+
+    // 2. Save to browser storage so it survives a refresh
+    if (typeof saveKeywords === "function") {
+        saveKeywords();
+    } else {
+        localStorage.setItem('tender_keywords', JSON.stringify(window.KEYWORDS));
+    }
+
+    toggleKeywordManager();
+
+    // 3. Visual confirmation
+    console.log("Active Keywords:", window.KEYWORDS);
+    alert("Keywords updated! Ready to scan with " + window.KEYWORDS.length + " terms.");
+}
+
+// 3. SCANNING ENGINE
+async function processFiles(files) {
+    if (files.length === 0) return;
+
+    // Reset UI
+    resultsArea.innerHTML = `<p class="scanning-msg">Scanning ${files.length} documents...</p>`;
+    progressBar.style.width = '0%';
+
+    // Clear previous URLs to save memory
+    objectUrls.forEach(url => URL.revokeObjectURL(url));
+    objectUrls = [];
+
+    // Create optimized Regex
+    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = URL.createObjectURL(file);
+        objectUrls.push(url);
+
+        try {
+            const pdf = await pdfjsLib.getDocument({ url, verbosity: 0 }).promise;
+            let text = "";
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(' ') + " ";
+            }
+
+            const matches = text.match(combinedRegex) || [];
+            const counts = {};
+            matches.forEach(match => {
+                const lowerMatch = match.toLowerCase();
+                const originalKey = KEYWORDS.find(k => k.toLowerCase() === lowerMatch) || lowerMatch;
+                counts[originalKey] = (counts[originalKey] || 0) + 1;
+            });
+
+            renderCard(file.name, counts, url);
+        } catch (err) {
+            console.error("Error scanning:", file.name, err);
+        }
+        progressBar.style.width = `${Math.round(((i + 1) / files.length) * 100)}%`;
+    }
+    resultsArea.querySelector('.scanning-msg')?.remove();
+}
+
+// 4. DRAG AND DROP
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
+    sidebar.addEventListener(name, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (name === 'dragover') sidebar.style.background = "#f0f7ff";
+        if (name === 'dragleave' || name === 'drop') sidebar.style.background = "white";
+    }, false);
+});
+
+sidebar.addEventListener('drop', async (e) => {
+    // 1. IMMEDIATELY capture entries into a static array.
+    // If you 'await' before doing this, the browser clears the items list.
+    const entries = [];
+    if (e.dataTransfer.items) {
+        for (let i = 0; i < e.dataTransfer.items.length; i++) {
+            const entry = e.dataTransfer.items[i].webkitGetAsEntry();
+            if (entry) entries.push(entry);
+        }
+    }
+
+    let filesToProcess = [];
+
+    // 2. Now you can safely 'await' while iterating through your static array
+    for (const entry of entries) {
+        if (entry.isFile && entry.name.toLowerCase().endsWith('.zip')) {
+            const zipFile = await new Promise((resolve) => entry.file(resolve));
+            const zippedPdfs = await extractPdfsFromZip(zipFile);
+            filesToProcess = filesToProcess.concat(zippedPdfs);
+        } else {
+            await traverseFileTree(entry, filesToProcess);
+        }
+    }
+
+    if (filesToProcess.length > 0) {
+        processFiles(filesToProcess);
+    }
+});
+
+async function traverseFileTree(item, fileList) {
+    if (item.isFile && item.name.toLowerCase().endsWith('.pdf')) {
+        const file = await new Promise((resolve) => item.file(resolve));
+        fileList.push(file);
+    } else if (item.isDirectory) {
+        const dirReader = item.createReader();
+        const entries = await new Promise((resolve) => dirReader.readEntries(resolve));
+        for (let entry of entries) {
+            await traverseFileTree(entry, fileList);
+        }
+    }
+}
+
+// 5. FILE INPUT CHANGE
+document.getElementById('folderInput').addEventListener('change', async (e) => {
+    let filesToProcess = [];
+    const selectedFiles = Array.from(e.target.files);
+
+    for (const file of selectedFiles) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+            const zippedPdfs = await extractPdfsFromZip(file);
+            filesToProcess = filesToProcess.concat(zippedPdfs);
+        } else if (file.name.toLowerCase().endsWith('.pdf')) {
+            filesToProcess.push(file);
+        }
+    }
+    processFiles(filesToProcess);
+});
+
+// 6. UI & VIEWER LOGIC
+function renderCard(name, counts, url) {
+    const card = document.createElement('div');
+    card.className = 'doc-card';
+    card.onclick = () => { setActiveCard(card); loadPDF(url); };
+    card.innerHTML = `<div class="doc-name">${name}</div>`;
+
+    const grid = document.createElement('div');
+    grid.className = 'badge-grid';
+
+    KEYWORDS.forEach(k => {
+        const count = counts[k] || 0;
+        if (count > 0) {
+            const b = document.createElement('div');
+            b.className = 'badge';
+            b.textContent = `${k}: ${count}`;
+            b.onclick = (e) => {
+                e.stopPropagation();
+                setActiveCard(card);
+                if (frame.dataset.currentUrl === url) {
+                    findInViewer(k);
+                } else {
+                    loadPDF(url, k);
+                }
+            };
+            grid.appendChild(b);
+        }
+    });
+    card.appendChild(grid);
+    resultsArea.appendChild(card);
+}
+
+function loadPDF(fileUrl, keyword = "") {
+    frame.dataset.currentUrl = fileUrl;
+    activeKeyword = "";
+    const searchParam = keyword ? `#search=${encodeURIComponent(keyword)}&phrase=true` : "";
+    frame.src = `${VIEWER_PATH}?file=${encodeURIComponent(fileUrl)}${searchParam}`;
+    frame.onload = () => {
+        setTimeout(() => { if (keyword) findInViewer(keyword); }, 1000);
+    };
+}
+
+let isSearching = false;
+function findInViewer(query) {
+    const viewerWin = frame.contentWindow;
+    if (!viewerWin || isSearching) return;
+    isSearching = true;
+    const isAgain = (query === activeKeyword);
+    activeKeyword = query;
+    viewerWin.postMessage({ type: 'find', query: query, again: isAgain }, '*');
+    setTimeout(() => { isSearching = false; }, 400);
+    frame.focus();
+}
+
+function setActiveCard(card) {
+    document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+}
+
+// --- 7. THE BULLETPROOF RESIZER ---
+(function() {
+    const resizer = document.getElementById("resizer");
+    const sidebar = document.getElementById("sidebar") || document.querySelector(".sidebar");
+    const pdfFrame = document.getElementById("pdfFrame");
+
+    if (!resizer || !sidebar) {
+        console.error("Resizer error: Sidebar or Resizer element not found in HTML.");
+        return;
+    }
+
+    resizer.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        document.body.classList.add("dragging");
+
+        const startX = e.clientX;
+        const startWidth = sidebar.offsetWidth;
+
+        function onMouseMove(e) {
+            // Calculate new width relative to the start position
+            const newWidth = startWidth + (e.clientX - startX);
+
+            // Set hard limits so you don't accidentally "lose" the sidebar
+            if (newWidth > 150 && newWidth < 900) {
+                sidebar.style.width = newWidth + "px";
+                sidebar.style.flexBasis = newWidth + "px"; // Added for Flexbox stability
+            }
+        }
+
+        function onMouseUp() {
+            document.body.classList.remove("dragging");
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+
+            // Sync the PDF viewer only ONCE at the end to prevent horizontal jumping
+            if (pdfFrame && pdfFrame.contentWindow) {
+                pdfFrame.contentWindow.postMessage({ type: 'setscale', value: 'page-width' }, '*');
+            }
+        }
+
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+    });
+})();
+
+async function extractPdfsFromZip(zipFile) {
+    const zip = await JSZip.loadAsync(zipFile);
+    const extractedFiles = [];
+    const promises = [];
+
+    zip.forEach((relativePath, zipEntry) => {
+        // Ignore directories and non-PDF files
+        if (!zipEntry.dir && relativePath.toLowerCase().endsWith('.pdf')) {
+            const promise = zipEntry.async("blob").then(blob => {
+                // We wrap the blob in a File object so it retains its name
+                const file = new File([blob], zipEntry.name, { type: "application/pdf" });
+                extractedFiles.push(file);
+            });
+            promises.push(promise);
+        }
+    });
+
+    await Promise.all(promises);
+    return extractedFiles;
+}
+
+</script>
+
+</body>
+
+</html>
