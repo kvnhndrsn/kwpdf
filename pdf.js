@@ -18,6 +18,7 @@ let searchCache = {};
 
 let pageHeights = {};
 let renderedPages = new Set();
+let renderedScales = {};
 let renderTask = null;
 
 let textPageCache = {};
@@ -28,6 +29,8 @@ let isNavigating = false;
 
 let bgRenderRunning = false;
 let bgRenderQueue = [];
+
+let zoomRenderTask = null;
 
 // DOM refs
 const viewer = document.getElementById('pdfViewer');
@@ -73,6 +76,11 @@ function toggleTheme() {
 
 // ========== SIDEBAR / SCANNING ==========
 
+function updateStats() {
+    document.getElementById('countDocs').textContent = totalDocsFound;
+    document.getElementById('countMatches').textContent = totalMatchesFound;
+}
+
 function clearAllResults() {
     if (confirm("Clear all scanned results and start fresh?")) {
         resultsArea.innerHTML = '<h1 class="status-msg">&#10548;</h1><h1 class="status-msg">Drop a folder to begin scanning</h1>';
@@ -88,193 +96,16 @@ function clearAllResults() {
         currentPage = 1;
         totalPages = 0;
         viewer.innerHTML = '';
-        viewer.style.transform = '';
         renderedPages.clear();
+        renderedScales = {};
         pageHeights = {};
-        searchResults = [];
-        currentMatchIndex = -1;
-        activeKeyword = "";
         searchCache = {};
+        clearSearch();
+        currentScale = 1.0;
+        currentPage = 1;
         textPageCache = {};
-        docTextCache = {};
-        cancelBgRender();
-        navGroup.classList.remove('active');
-        navSep.style.display = 'none';
-        progressBar.style.width = '0%';
-        pageInput.value = '';
-        pageTotal.textContent = '0';
-        matchInput.value = '';
-        matchTotal.textContent = '0';
-        matchCounter.textContent = '0 / 0';
-        keywordSelect.value = '';
-        updateHeatmap();
     }
 }
-
-function updateStats() {
-    document.getElementById('countDocs').textContent = totalDocsFound;
-    document.getElementById('countMatches').textContent = totalMatchesFound;
-}
-
-function toggleKeywordManager() {
-    const modal = document.getElementById('keywordManager');
-    const area = document.getElementById('keywordInput');
-    if (modal.style.display === 'none' || modal.style.display === '') {
-        area.value = KEYWORDS.join('\n');
-        modal.style.display = 'flex';
-    } else {
-        modal.style.display = 'none';
-    }
-}
-
-function updateKeywordsFromUI() {
-    const area = document.getElementById('keywordInput');
-    window.KEYWORDS = area.value.split('\n').map(k => k.trim()).filter(k => k !== "");
-    if (typeof saveKeywords === "function") {
-        saveKeywords();
-    } else {
-        localStorage.setItem('tender_keywords', JSON.stringify(window.KEYWORDS));
-    }
-    toggleKeywordManager();
-}
-
-async function processFiles(files) {
-    if (files.length === 0) return;
-
-    resultsArea.innerHTML = `<p class="scanning-msg">Scanning ${files.length} documents...</p>`;
-    progressBar.style.width = '0%';
-
-    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-    let matchedInSession = 0;
-
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const url = URL.createObjectURL(file);
-        objectUrls.push(url);
-
-        if (resultsArea.querySelector('.scanning-msg')) {
-            resultsArea.querySelector('.scanning-msg').textContent = `Scanning ${i + 1} / ${files.length}: ${file.name}`;
-        }
-
-        try {
-            const pdf = await pdfjsLib.getDocument({ url, verbosity: 0 }).promise;
-            let text = "";
-            const pageTextData = [];
-
-            for (let p = 1; p <= pdf.numPages; p++) {
-                const page = await pdf.getPage(p);
-                const content = await page.getTextContent();
-                const vp = page.getViewport({ scale: 1.0 });
-
-                let pageText = '';
-                let textItems = [];
-                for (const item of content.items) {
-                    textItems.push({
-                        text: item.str,
-                        transform: item.transform,
-                        width: item.width,
-                        height: item.height
-                    });
-                    pageText += item.str;
-                }
-                pageTextData.push({ text: pageText, items: textItems, viewport: vp });
-                text += pageText + " ";
-            }
-
-            docTextCache[url] = { totalPages: pdf.numPages, pages: pageTextData, fileName: file.name };
-
-            const matches = text.match(combinedRegex) || [];
-            const counts = {};
-            let fileTotalMatches = 0;
-
-            matches.forEach(match => {
-                const lowerMatch = match.toLowerCase();
-                const originalKey = KEYWORDS.find(k => k.toLowerCase() === lowerMatch) || lowerMatch;
-                counts[originalKey] = (counts[originalKey] || 0) + 1;
-                fileTotalMatches++;
-            });
-
-            totalDocsFound++;
-            
-            if (fileTotalMatches > 0) {
-                if (matchedInSession === 0 && resultsArea.querySelector('.scanning-msg')) {
-                    resultsArea.innerHTML = "";
-                }
-                renderCard(file.name, counts, url);
-                totalMatchesFound += fileTotalMatches;
-                matchedInSession++;
-                updateStats();
-            } else {
-                renderNoMatchCard(file.name, url);
-            }
-        } catch (err) {
-            console.error("Error scanning:", file.name, err);
-        }
-        progressBar.style.width = `${Math.round(((i + 1) / files.length) * 100)}%`;
-    }
-
-    if (resultsArea.querySelector('.scanning-msg')) {
-        resultsArea.querySelector('.scanning-msg').remove();
-    }
-    if (matchedInSession === 0 && resultsArea.innerHTML === "") {
-        resultsArea.innerHTML = "<p class='status-msg'>No matches found in the selected folder.</p>";
-    } else if (matchedInSession > 0) {
-        const summary = document.createElement('p');
-        summary.className = 'status-msg';
-        summary.style.marginTop = '12px';
-        summary.style.color = 'var(--green-light)';
-        summary.textContent = `Done — ${matchedInSession} document${matchedInSession > 1 ? 's' : ''} with matches`;
-        resultsArea.appendChild(summary);
-    }
-}
-
-function renderCard(name, counts, url) {
-    const card = document.createElement('div');
-    card.className = 'doc-card';
-    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
-    card.innerHTML = `<div class="doc-name">${name}</div>`;
-
-    const grid = document.createElement('div');
-    grid.className = 'badge-grid';
-
-    KEYWORDS.forEach(k => {
-        const count = counts[k] || 0;
-        if (count > 0) {
-            const b = document.createElement('div');
-            b.className = 'badge';
-            b.dataset.keyword = k;
-            b.textContent = `${k}: ${count}`;
-            b.onclick = (e) => {
-                e.stopPropagation();
-                setActiveCard(card);
-                closeMobileSidebar();
-                if (currentDocUrl === url) {
-                    cycleSearch(k);
-                } else {
-                    loadPDF(url, k);
-                }
-            };
-            grid.appendChild(b);
-        }
-    });
-    card.appendChild(grid);
-    resultsArea.appendChild(card);
-}
-
-function renderNoMatchCard(name, url) {
-    const card = document.createElement('div');
-    card.className = 'doc-card doc-card-minimal';
-    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
-    card.innerHTML = `<div class="doc-name">${name}</div>`;
-    resultsArea.appendChild(card);
-}
-
-function setActiveCard(card) {
-    document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('active'));
-    card.classList.add('active');
-}
-
-// ========== PDF LOADING ==========
 
 async function loadPDF(fileUrl, keyword = "") {
     if (currentDocUrl === fileUrl && pdfDoc) {
@@ -286,13 +117,23 @@ async function loadPDF(fileUrl, keyword = "") {
 
     cancelBgRender();
 
+    //destroy old pdf memory to be more efficient
+    if (pdfDoc) {
+        try {
+            await pdfDoc.destroy();
+        } catch (e) {
+            console.warn("Error destroying previous PDF:", e);
+        }
+        pdfDoc = null;
+    }
+
     loader.style.display = 'flex';
     loaderFilename.textContent = 'Loading PDF...';
     loaderStatus.textContent = 'Initializing...';
     loaderProgressFill.style.width = '10%';
     viewer.innerHTML = '';
-    viewer.style.transform = '';
     renderedPages.clear();
+    renderedScales = {};
     pageHeights = {};
     searchCache = {};
     clearSearch();
@@ -312,7 +153,6 @@ async function loadPDF(fileUrl, keyword = "") {
         loaderStatus.textContent = 'Extracting text content...';
         loaderProgressFill.style.width = '60%';
 
-        // Copy pre-extracted text from scan cache
         const cached = docTextCache[fileUrl];
         if (cached) {
             for (let i = 0; i < cached.pages.length; i++) {
@@ -344,9 +184,16 @@ async function loadPDF(fileUrl, keyword = "") {
 
 // ========== PAGE SETUP & RENDERING ==========
 
+let pageObserver = null;
+
 async function setupVirtualPages() {
     viewer.innerHTML = '';
     pageHeights = {};
+
+    if (pageObserver) {
+        pageObserver.disconnect();
+        pageObserver = null;
+    }
 
     const firstPage = await pdfDoc.getPage(1);
     const firstViewport = firstPage.getViewport({ scale: 1.0 });
@@ -365,42 +212,23 @@ async function setupVirtualPages() {
         viewer.appendChild(placeholder);
     }
 
-    renderVisiblePages();
+    setupPageObserver();
 }
 
-function renderVisiblePages() {
-    if (renderTask) {
-        renderTask.cancelled = true;
-    }
-
-    const task = { cancelled: false };
-    renderTask = task;
-
-    requestAnimationFrame(() => {
-        if (task.cancelled) return;
-
-        const scrollTop = viewerScroll.scrollTop / currentScale;
-        const containerHeight = viewerScroll.clientHeight / currentScale;
-        const viewStart = scrollTop - 200;
-        const viewEnd = scrollTop + containerHeight + 200;
-
-        let offsetY = 0;
-
-        for (let i = 1; i <= totalPages; i++) {
-            const h = pageHeights[i] || 800;
-            const pageTop = offsetY;
-            const pageBottom = offsetY + h;
-            offsetY += h + 32;
-
-            const el = document.getElementById('page-' + i);
-            if (!el) continue;
-
-            const inView = pageBottom > viewStart && pageTop < viewEnd;
-
-            if (inView && !isPageRendered(i)) {
-                renderPageNow(i);
+function setupPageObserver() {
+    pageObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const pageNum = parseInt(entry.target.dataset.pageNum);
+                if (pageNum && !isPageRendered(pageNum)) {
+                    renderPageNow(pageNum);
+                }
             }
-        }
+        });
+    }, { root: viewerScroll, rootMargin: "500px" });
+
+    document.querySelectorAll('[id^="page-"]').forEach(el => {
+        pageObserver.observe(el);
     });
 }
 
@@ -442,40 +270,67 @@ function isPageRendered(pageNum) {
     return renderedPages.has(pageNum);
 }
 
-async function renderPageNow(pageNum) {
-    if (renderedPages.has(pageNum) || !pdfDoc) return;
+async function renderPageNow(pageNum, forceScale = null) {
+    const renderScale = forceScale || currentScale;
+    const dpr = window.devicePixelRatio || 1;
+    const effectiveScale = renderScale * dpr;
+    
+    if (renderedPages.has(pageNum) && !forceScale) {
+        return;
+    }
+    
+    if (!pdfDoc) return;
+    
     renderedPages.add(pageNum);
+    renderedScales[pageNum] = Math.max(renderedScales[pageNum] || 0, renderScale);
 
     const page = await pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.0 });
+    const viewport = page.getViewport({ scale: effectiveScale });
 
     const el = document.getElementById('page-' + pageNum);
     if (!el) return;
 
+    const displayWidth = viewport.width / dpr;
+    const displayHeight = viewport.height / dpr;
+
     el.className = 'pdf-page';
     el.textContent = '';
+    el.style.width = displayWidth + 'px';
+    el.style.height = displayHeight + 'px';
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
+    canvas.dataset.scale = renderScale;
 
     await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    
+    const existingCanvas = el.querySelector('canvas');
+    if (existingCanvas) {
+        existingCanvas.remove();
+    }
     el.appendChild(canvas);
 
     const textLayerDiv = document.createElement('div');
     textLayerDiv.className = 'textLayer';
-    textLayerDiv.style.width = viewport.width + 'px';
-    textLayerDiv.style.height = viewport.height + 'px';
+    textLayerDiv.style.width = displayWidth + 'px';
+    textLayerDiv.style.height = displayHeight + 'px';
 
     const textContent = await page.getTextContent();
     pdfjsLib.renderTextLayer({
         textContent: textContent,
         container: textLayerDiv,
-        viewport: viewport,
+        viewport: page.getViewport({ scale: renderScale }),
         textDivs: []
     });
 
+    const existingTextLayer = el.querySelector('.textLayer');
+    if (existingTextLayer) {
+        existingTextLayer.remove();
+    }
     el.appendChild(textLayerDiv);
 
     if (searchResults.length > 0) {
@@ -512,22 +367,24 @@ function computeSearchForQuery(query) {
 
         while ((match = localRegex.exec(pageText)) !== null) {
             const matchStart = match.index;
-            const matchEnd = match.index + match[0].length;
+            const matchEnd   = match.index + match[0].length;
 
             let charOffset = 0;
-            let startItem = null;
-            let endItem = null;
+            let startItem = null, endItem = null;
+            let startItemCharStart = 0, endItemCharStart = 0;
 
             for (const item of textItems) {
                 const itemStart = charOffset;
-                const itemEnd = charOffset + item.text.length;
+                const itemEnd   = charOffset + item.text.length;
 
                 if (!startItem && matchStart >= itemStart && matchStart < itemEnd) {
                     startItem = item;
+                    startItemCharStart = itemStart;
                 }
 
-                if (matchEnd >= itemStart && matchEnd <= itemEnd) {
+                if (startItem && matchEnd > itemStart && matchEnd <= itemEnd) {
                     endItem = item;
+                    endItemCharStart = itemStart;
                     break;
                 }
 
@@ -535,18 +392,26 @@ function computeSearchForQuery(query) {
             }
 
             if (startItem) {
-                const sx = startItem.transform[4];
+                // Proportional x offset within the startItem
+                const startCharFrac = startItem.text.length > 0
+                    ? (matchStart - startItemCharStart) / startItem.text.length : 0;
+                const sx = startItem.transform[4] + startCharFrac * startItem.width;
+
                 const sy = viewport.height - (startItem.transform[5] + startItem.height);
-                const endX = endItem ? (endItem.transform[4] + endItem.width) : (startItem.transform[4] + startItem.width);
-                const sw = endX - sx;
-                const sh = startItem.height;
+
+                // Proportional x end within the endItem (or startItem if same)
+                const ei = endItem || startItem;
+                const eiCharStart = endItem ? endItemCharStart : startItemCharStart;
+                const endCharFrac = ei.text.length > 0
+                    ? (matchEnd - eiCharStart) / ei.text.length : 1;
+                const endX = ei.transform[4] + endCharFrac * ei.width;
 
                 results.push({
                     page: pageNum,
                     x: sx,
                     y: sy,
-                    width: Math.max(sw, 5),
-                    height: sh
+                    width: Math.max(endX - sx, 4),
+                    height: startItem.height
                 });
             }
         }
@@ -658,10 +523,10 @@ function renderHighlightMark(result, index) {
 
     const mark = document.createElement('div');
     mark.className = 'highlight-mark' + (index === currentMatchIndex ? ' current' : '');
-    mark.style.left = result.x + 'px';
-    mark.style.top = result.y + 'px';
-    mark.style.width = result.width + 'px';
-    mark.style.height = result.height + 'px';
+    mark.style.left = (result.x * currentScale) + 'px';
+    mark.style.top = (result.y * currentScale) + 'px';
+    mark.style.width = (result.width * currentScale) + 'px';
+    mark.style.height = (result.height * currentScale) + 'px';
 
     pageEl.appendChild(mark);
 }
@@ -693,7 +558,7 @@ function updateSidebarBadge() {
     const badges = document.querySelectorAll('.badge');
     badges.forEach(badge => {
         const k = badge.dataset.keyword;
-        const total = searchCache[k] ? searchCache[k].length : 0;
+        const total = parseInt(badge.dataset.count) || 0;
         if (k === activeKeyword && currentMatchIndex >= 0) {
             badge.textContent = `${k}: ${currentMatchIndex + 1}/${total}`;
         } else {
@@ -706,15 +571,75 @@ function updateSidebarBadge() {
 
 function setZoom(newScale) {
     const oldScale = currentScale;
-    currentScale = Math.max(0.5, Math.min(4.0, newScale));
+    const clampedScale = Math.max(0.5, Math.min(4.0, newScale));
+
+    // --- Anchor: find what document-Y is at the center of the viewport ---
+    // so we can restore it after resizing pages
+    const centerPixel = viewerScroll.scrollTop + viewerScroll.clientHeight / 2;
+    let totalOldHeight = 0;
+    for (let i = 1; i <= totalPages; i++) {
+        totalOldHeight += (pageHeights[i] || 800) * oldScale + 32;
+    }
+    const anchorFraction = totalOldHeight > 0 ? centerPixel / totalOldHeight : 0;
+    // ---
+
+    currentScale = clampedScale;
     updateZoomDisplay();
 
-    viewer.style.transform = `scale(${currentScale})`;
+    // Resize all page elements to new scale without re-rendering immediately
+    for (let i = 1; i <= totalPages; i++) {
+        const el = document.getElementById('page-' + i);
+        if (!el) continue;
 
-    const oldScrollTop = viewerScroll.scrollTop;
-    viewerScroll.scrollTop = oldScrollTop * (currentScale / oldScale);
+        const baseH = pageHeights[i] || 800;
+        const cached = textPageCache[i];
+        const baseW = cached ? cached.viewport.width : 600;
+        const displayW = baseW * currentScale;
+        const displayH = baseH * currentScale;
 
-    updateHeatmap();
+        el.style.width = displayW + 'px';
+        el.style.height = displayH + 'px';
+
+        // CSS-scale existing canvas/textLayer instantly (blurry but fast)
+        const canvas = el.querySelector('canvas');
+        if (canvas) {
+            canvas.style.width = displayW + 'px';
+            canvas.style.height = displayH + 'px';
+        }
+        const textLayer = el.querySelector('.textLayer');
+        if (textLayer) {
+            textLayer.style.width = displayW + 'px';
+            textLayer.style.height = displayH + 'px';
+        }
+    }
+
+    // Mark all pages as needing re-render at new scale
+    renderedPages.clear();
+    renderedScales = {};
+
+    // --- Restore scroll after DOM updates ---
+    requestAnimationFrame(() => {
+        let totalNewHeight = 0;
+        for (let i = 1; i <= totalPages; i++) {
+            totalNewHeight += (pageHeights[i] || 800) * currentScale + 32;
+        }
+        viewerScroll.scrollTop = anchorFraction * totalNewHeight - viewerScroll.clientHeight / 2;
+
+        // Clear highlights (positions change with scale)
+        clearHighlights();
+
+        // Reconnect observer
+        if (pageObserver) {
+            pageObserver.disconnect();
+            setupPageObserver();
+        }
+
+        // Re-render highlights at new scale
+        if (searchResults.length > 0) {
+            renderAllHighlights();
+        }
+        updateHeatmap();
+    });
 }
 
 function zoomIn() { setZoom(currentScale + 0.15); }
@@ -725,29 +650,95 @@ function zoomFit() {
     pdfDoc.getPage(1).then(page => {
         const viewport = page.getViewport({ scale: 1.0 });
         const containerWidth = viewerScroll.clientWidth - 32;
-        currentScale = Math.max(0.5, Math.min(4.0, containerWidth / viewport.width));
-        updateZoomDisplay();
-        viewer.style.transform = `scale(${currentScale})`;
-        viewerScroll.scrollTop = 0;
-        updateHeatmap();
+        const fitScale = Math.max(0.5, Math.min(4.0, containerWidth / viewport.width));
+        setZoom(fitScale);
     });
 }
 
 function zoomActual() {
-    currentScale = 1.0;
-    updateZoomDisplay();
-    viewer.style.transform = 'scale(1)';
-    viewerScroll.scrollTop = 0;
-    updateHeatmap();
+    setZoom(1.0);
+}
+
+function scheduleHighResRender() {
+    if (zoomRenderTask) {
+        zoomRenderTask.cancelled = true;
+    }
+
+    const task = { cancelled: false };
+    zoomRenderTask = task;
+
+    const visiblePages = getVisiblePages();
+    
+    async function renderHighRes() {
+        if (task.cancelled) return;
+        
+        for (const pageNum of visiblePages) {
+            if (task.cancelled) return;
+            
+            const currentScale = renderedScales[pageNum] || 1.0;
+            if (currentScale < 2.0) {
+                await renderPageNow(pageNum, 2.0);
+            }
+            
+            await new Promise(r => requestAnimationFrame(r));
+        }
+    }
+
+    requestAnimationFrame(renderHighRes);
+}
+
+function getVisiblePages() {
+    const scrollTop = viewerScroll.scrollTop;
+    const containerHeight = viewerScroll.clientHeight;
+    const viewStart = scrollTop - 200;
+    const viewEnd = scrollTop + containerHeight + 200;
+
+    const visible = [];
+    let offsetY = 0;
+
+    for (let i = 1; i <= totalPages; i++) {
+        const h = (pageHeights[i] || 800) * currentScale;
+        const pageTop = offsetY;
+        const pageBottom = offsetY + h;
+        offsetY += h + 32;
+
+        if (pageBottom > viewStart && pageTop < viewEnd) {
+            visible.push(i);
+        }
+    }
+
+    return visible;
+}
+
+function clearHighResRenders() {
+    for (const pageNum of Object.keys(renderedScales)) {
+        renderedScales[pageNum] = 0;
+    }
+    
+    document.querySelectorAll('.pdf-page').forEach(el => {
+        el.innerHTML = '';
+        const pageNum = parseInt(el.dataset.pageNum);
+        const h = pageHeights[pageNum] || 800;
+        const cached = textPageCache[pageNum];
+        const w = cached ? cached.viewport.width : 600;
+        const placeholder = document.createElement('div');
+        placeholder.className = 'page-placeholder';
+        placeholder.id = 'page-' + pageNum;
+        placeholder.dataset.pageNum = pageNum;
+        placeholder.style.width = w + 'px';
+        placeholder.style.height = h + 'px';
+        placeholder.textContent = `Page ${pageNum}`;
+        el.appendChild(placeholder);
+    });
+    
+    if (pageObserver) {
+        pageObserver.disconnect();
+        setupPageObserver();
+    }
 }
 
 function updateZoomDisplay() {
     zoomLevelEl.textContent = Math.round(currentScale * 100) + '%';
-}
-
-function updatePageInfo() {
-    pageInput.value = currentPage;
-    pageInput.placeholder = totalPages > 0 ? currentPage : '0';
 }
 
 // ========== PAGE NAVIGATION ==========
@@ -769,12 +760,11 @@ function nextPage() {
 function scrollToPage(pageNum) {
     let targetOffset = 0;
     for (let i = 1; i < pageNum; i++) {
-        targetOffset += (pageHeights[i] || 800) + 32;
+        targetOffset += (pageHeights[i] * currentScale || 800) + 32;
     }
-    const targetTop = targetOffset * currentScale;
     const behavior = smoothScrollEnabled && !isNavigating ? 'smooth' : 'auto';
     isNavigating = true;
-    viewerScroll.scrollTo({ top: targetTop, behavior: behavior });
+    viewerScroll.scrollTo({ top: targetOffset, behavior: behavior });
     currentPage = pageNum;
     updatePageInfo();
     setTimeout(() => { isNavigating = false; }, 100);
@@ -805,12 +795,12 @@ viewerScroll.addEventListener('scroll', () => {
     if (!viewer.children.length) return;
     if (isNavigating) return;
 
-    const scrollTop = viewerScroll.scrollTop / currentScale;
-    const containerHeight = viewerScroll.clientHeight / currentScale;
+    const scrollTop = viewerScroll.scrollTop;
+    const containerHeight = viewerScroll.clientHeight;
 
     let offsetY = 0;
     for (let i = 1; i <= totalPages; i++) {
-        const h = pageHeights[i] || 800;
+        const h = (pageHeights[i] || 800) * currentScale;
         const pageBottom = offsetY + h;
 
         if (scrollTop + containerHeight / 2 < pageBottom) {
@@ -823,7 +813,6 @@ viewerScroll.addEventListener('scroll', () => {
         offsetY += h + 32;
     }
 
-    renderVisiblePages();
     updateHeatmap();
 });
 
@@ -842,7 +831,7 @@ function goToMatch(index) {
     renderPageNow(result.page).then(() => {
         const pageEl = document.getElementById('page-' + result.page);
         if (pageEl) {
-            const targetTop = (pageEl.offsetTop + result.y) * currentScale - (viewerScroll.clientHeight / 2);
+            const targetTop = pageEl.offsetTop + result.y * currentScale - (viewerScroll.clientHeight / 2);
             const behavior = smoothScrollEnabled ? 'smooth' : 'auto';
             viewerScroll.scrollTo({ top: Math.max(0, targetTop), behavior: behavior });
         }
@@ -1010,12 +999,9 @@ document.addEventListener('mouseup', () => {
 
 // ========== MOBILE (disabled) ==========
 
-function toggleMobileSidebar() { }
-function closeMobileSidebar() { }
 function closeMobileSidebar() {
     sidebar.classList.remove('open');
 }
-function openMobileFilePicker() { }
 
 // ========== TOUCH ZOOM ==========
 
@@ -1090,6 +1076,152 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ========== DRAG & DROP ==========
+
+function renderCard(name, counts, url) {
+    const card = document.createElement('div');
+    card.className = 'doc-card';
+    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
+    card.innerHTML = `<div class="doc-name">${name}</div>`;
+
+    const grid = document.createElement('div');
+    grid.className = 'badge-grid';
+
+    const keywordCounts = {};
+    KEYWORDS.forEach(k => {
+        const count = counts[k] || 0;
+        if (count > 0) {
+            keywordCounts[k] = count;
+        }
+    });
+    card.dataset.counts = JSON.stringify(keywordCounts);
+
+    KEYWORDS.forEach(k => {
+        const count = counts[k] || 0;
+        if (count > 0) {
+            const b = document.createElement('div');
+            b.className = 'badge';
+            b.dataset.keyword = k;
+            b.dataset.count = count;
+            b.textContent = `${k}: ${count}`;
+            b.onclick = (e) => {
+                e.stopPropagation();
+                setActiveCard(card);
+                closeMobileSidebar();
+                if (currentDocUrl === url) {
+                    cycleSearch(k);
+                } else {
+                    loadPDF(url, k);
+                }
+            };
+            grid.appendChild(b);
+        }
+    });
+    card.appendChild(grid);
+    resultsArea.appendChild(card);
+}
+
+function renderNoMatchCard(name, url) {
+    const card = document.createElement('div');
+    card.className = 'doc-card doc-card-minimal';
+    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
+    card.innerHTML = `<div class="doc-name">${name}</div>`;
+    resultsArea.appendChild(card);
+}
+
+function setActiveCard(card) {
+    document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+}
+
+async function processFiles(files) {
+    if (files.length === 0) return;
+
+    resultsArea.innerHTML = `<p class="scanning-msg">Scanning ${files.length} documents...</p>`;
+    progressBar.style.width = '0%';
+
+    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+    let matchedInSession = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = URL.createObjectURL(file);
+        objectUrls.push(url);
+
+        if (resultsArea.querySelector('.scanning-msg')) {
+            resultsArea.querySelector('.scanning-msg').textContent = `Scanning ${i + 1} / ${files.length}: ${file.name}`;
+        }
+
+        try {
+            const pdf = await pdfjsLib.getDocument({ url, verbosity: 0 }).promise;
+            let text = "";
+            const pageTextData = [];
+
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const content = await page.getTextContent();
+                const vp = page.getViewport({ scale: 1.0 });
+
+                let pageText = '';
+                let textItems = [];
+                for (const item of content.items) {
+                    textItems.push({
+                        text: item.str,
+                        transform: item.transform,
+                        width: item.width,
+                        height: item.height
+                    });
+                    pageText += item.str;
+                }
+                pageTextData.push({ text: pageText, items: textItems, viewport: vp });
+                text += pageText + " ";
+            }
+
+            docTextCache[url] = { totalPages: pdf.numPages, pages: pageTextData, fileName: file.name };
+
+            const matches = text.match(combinedRegex) || [];
+            const counts = {};
+            let fileTotalMatches = 0;
+
+            matches.forEach(match => {
+                const lowerMatch = match.toLowerCase();
+                const originalKey = KEYWORDS.find(k => k.toLowerCase() === lowerMatch) || lowerMatch;
+                counts[originalKey] = (counts[originalKey] || 0) + 1;
+                fileTotalMatches++;
+            });
+
+            totalDocsFound++;
+            
+            if (fileTotalMatches > 0) {
+                if (matchedInSession === 0 && resultsArea.querySelector('.scanning-msg')) {
+                    resultsArea.innerHTML = "";
+                }
+                renderCard(file.name, counts, url);
+                totalMatchesFound += fileTotalMatches;
+                matchedInSession++;
+                updateStats();
+            } else {
+                renderNoMatchCard(file.name, url);
+            }
+        } catch (err) {
+            console.error("Error scanning:", file.name, err);
+        }
+        progressBar.style.width = `${Math.round(((i + 1) / files.length) * 100)}%`;
+    }
+
+    if (resultsArea.querySelector('.scanning-msg')) {
+        resultsArea.querySelector('.scanning-msg').remove();
+    }
+    if (matchedInSession === 0 && resultsArea.innerHTML === "") {
+        resultsArea.innerHTML = "<p class='status-msg'>No matches found in the selected folder.</p>";
+    } else if (matchedInSession > 0) {
+        const summary = document.createElement('p');
+        summary.className = 'status-msg';
+        summary.style.marginTop = '12px';
+        summary.style.color = 'var(--green-light)';
+        summary.textContent = `Done — ${matchedInSession} document${matchedInSession > 1 ? 's' : ''} with matches`;
+        resultsArea.appendChild(summary);
+    }
+}
 
 async function handleDrop(e) {
     const entries = [];
@@ -1337,5 +1469,27 @@ if (typeof saved === 'undefined' || !window.KEYWORDS) {
         try {
             window.KEYWORDS = JSON.parse(_saved);
         } catch {}
+    }
+}
+
+/**
+ * UI Bridge: Toggles the Keyword Management Modal
+ */
+function toggleKeywordManager() {
+    const modal = document.getElementById('keywordManager');
+    if (!modal) {
+        console.error("Could not find keywordManager element in DOM");
+        return;
+    }
+
+    const isShowing = modal.classList.toggle('show');
+
+    if (isShowing) {
+        if (typeof populateModalListSelector === 'function') {
+            populateModalListSelector();
+        }
+        if (typeof loadListIntoEditor === 'function') {
+            loadListIntoEditor();
+        }
     }
 }

@@ -13,14 +13,18 @@
 
 <div id="sidebar" class="sidebar">
     <div class="header">
-        <div class="header-top">
-            <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">&#9728;</button>
-            <select class="list-select" id="keywordListSelect" title="Keyword list"></select>
-            <label class="btn-action">
-                Open
+        <div class="header-main-row">
+            <label class="btn-open">
+                <svg class="btn-open-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                Open Folder
                 <input type="file" id="folderInput" webkitdirectory directory multiple accept="application/pdf" style="display:none">
             </label>
-            <button class="btn-icon" onclick="clearAllResults()" title="Clear">&#10005;</button>
+            <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">&#9728;</button>
+            <button class="btn-icon btn-icon-danger" onclick="clearAllResults()" title="Clear all">&#10005;</button>
+        </div>
+        <div class="keyword-row">
+            <button class="btn-icon btn-icon-sm" onclick="toggleKeywordManager()" title="Manage keyword lists">&#9881;</button>
+            <select class="list-select" id="keywordListSelect" title="Keyword list"></select>
         </div>
         <div class="progress-bar-wrap">
             <div class="progress-bar" id="progressBar"></div>
@@ -92,11 +96,27 @@
 <div id="keywordManager">
     <div class="modal">
         <h3>Manage Keywords</h3>
-        <p>Edit your search terms (one per line). Changes apply to new scans.</p>
+        <div class="keyword-list-header">
+            <select id="listSelector" onchange="loadListIntoEditor()"></select>
+            <button onclick="showNewListDialog()" class="btn-action" style="flex:none; width:80px;">+ New</button>
+            <button onclick="deleteCurrentList()" id="deleteListBtn" class="btn-action" style="flex:none; width:80px; background:#c0392b;">Delete</button>
+        </div>
+        <p class="list-info" id="listInfo"></p>
         <textarea id="keywordInput"></textarea>
         <div class="modal-footer">
             <button onclick="toggleKeywordManager()" class="btn-action" style="flex:none; width:100px;">Cancel</button>
-            <button onclick="updateKeywordsFromUI()" class="btn-action" style="flex:none; width:120px; background:var(--green); color:white; border:none;">Save & Apply</button>
+            <button onclick="saveCurrentList()" class="btn-action" style="flex:none; width:120px; background:var(--green); color:white; border:none;">Save & Apply</button>
+        </div>
+    </div>
+</div>
+
+<div id="newListDialog">
+    <div class="modal">
+        <h3>New Keyword List</h3>
+        <input type="text" id="newListName" placeholder="List name" onkeydown="if(event.key==='Enter')createNewList()">
+        <div class="modal-footer">
+            <button onclick="hideNewListDialog()" class="btn-action" style="flex:none; width:100px;">Cancel</button>
+            <button onclick="createNewList()" class="btn-action" style="flex:none; width:80px; background:var(--green); color:white; border:none;">Create</button>
         </div>
     </div>
 </div>
