@@ -1,6 +1,6 @@
 // keywords.js
 
-const DEFAULT_LIST_NAME = "Geosynthetics";
+const DEFAULT_LIST_NAME = "Central Supply-Only";
 
 const DEFAULT_KEYWORD_LISTS = {
     "Central Supply-Only": [
@@ -11,14 +11,14 @@ const DEFAULT_KEYWORD_LISTS = {
         "needle punched", "heat bonded", "paving fabric", "petromat", "TE-8", "TE-6", "TE-12",
 
         // --- Geogrids & Soil Reinforcement ---
-        "geogrid", "geo grid", "Earth Grid", "bi axial", "bi-axial", "biaxial", "triaxial grid",
+        "geogrid", "geo grid", "Earth Grid", "gladiator grid", "bi axial", "bi-axial", "biaxial", "triaxial grid",
         "fiberglass grid", "glasgrid", "swamp grid", "Miragrid", "triplanar", "composite grid",
         "composite geo", "strata grid", "TX160", "TX140", "geosynthetic reinforcement",
         "basal reinforcement", "combigrid", "combi grid", "combi-grid",
 
         // --- Liners & Containment ---
-        "geomembrane", "geo membrane", "membrane", "EPDM liner", "EPDM membrane", "PVC liner",
-        "LLDPE liner", "HDPE liner", "RPE liner", "40mil LLDPE", "40mil HDPE", "60mil HDPE",
+        "geomembrane", "geo membrane", "EPDM liner", "EPDM membrane", "PVC liner",
+        "LLDPE liner", "HDPE liner", "20mil RPE", "24mil RPE", "30mil RPE", "RPE liner", "40mil LLDPE", "40mil HDPE", "60mil HDPE",
         "HAZGARD", "XR-5", "XR-3", "GEOFLEX", "secondary containment", "concrete protective liner",
         "Studliner", "Sure-Grip", "Sure Grip", "concrete liner", "CONCRETE LINING SYSTEM",
         "Liner sheet", "ultra grip", "HDPE pipe liner", "ClosureTurf", "BGM", "GCL",
@@ -39,13 +39,13 @@ const DEFAULT_KEYWORD_LISTS = {
         "TE-SC32", "TE-C32", "stenlog", "wattle", "sediment log", "ditch check", "bio-log",
         "silt fence", "TE100SF", "silt curtain", "sediment control", "turbidity curtain",
         "W315", "safety boom", "coir log", "coconut fiber", "straw wattle", "excelsior blanket",
-        "curlex", "north american green", "NAG", "hydroseeding", "bonded fiber matrix", "BFM",
+        "curlex", "north american green", "hydroseeding", "bonded fiber matrix",
 
         // --- Hard Armor & Shoreline Protection ---
         "cable concrete", "shoreflex", "flexamat", "Concrete Matting", "articulated concrete",
         "articulating concrete", "TRM", "turf reinforcement", "turf-reinforcement", "pyramat",
         "landlok", "Armormax", "Fabrinet", "concrete canvas", "Geosynthetic Cementitious Composite Mat",
-        "revetment", "rip rap alternative", "articulating concrete block", "ACB", "scour protection",
+        "revetment", "rip rap alternative", "articulating concrete block", "scour protection",
 
         // --- Stormwater & Cellular Confinement ---
         "geocell", "geo cell", "Geoweb", "Tough Cell", "stormwater system", "storm water system",

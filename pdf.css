@@ -20,8 +20,7 @@
     --toolbar-bg: var(--grey-900);
     --page-bg: var(--grey-800);
     --heatmap-track: rgba(0,0,0,0.3);
-    --heatmap-bar: var(--green-light);
-    --heatmap-thumb: rgba(255,255,255,0.12);
+    --heatmap-bar: var(--green);
     --toolbar-text: white;
 }
 
@@ -46,8 +45,7 @@
     --toolbar-bg: var(--grey-700);
     --page-bg: var(--grey-600);
     --heatmap-track: rgba(0,0,0,0.1);
-    --heatmap-bar: var(--green-light);
-    --heatmap-thumb: rgba(0,0,0,0.15);
+    --heatmap-bar: var(--green);
     --toolbar-text: #333;
 }
 
@@ -400,18 +398,6 @@ body {
     box-shadow: 0 0 4px rgba(107, 158, 58, 0.6);
 }
 
-.heatmap-thumb {
-    position: absolute;
-    right: 0;
-    width: 12px;
-    height: 30px;
-    background: var(--heatmap-thumb);
-    border-radius: 3px;
-    pointer-events: auto;
-    cursor: grab;
-    z-index: 101;
-}
-
 .pdf-page {
     position: relative; margin: 16px auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3); background: white;
 }
@@ -508,7 +494,7 @@ body {
 
 #viewerLoader {
     position: absolute; inset: 0; background: var(--grey-800); display: none;
-    justify-content: center; align-items: center; z-index: 20;
+    justify-content: center; align-items: center; z-index: 10;
     color: white; font-size: 1rem; flex-direction: column; gap: 12px;
 }
 .spinner {

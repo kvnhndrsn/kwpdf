@@ -32,31 +32,21 @@
         </div>
     </div>
 
-    <div class="stats-bar" id="statsBar">
-        <span><strong id="countDocs">0</strong> docs</span>
-        <span><strong id="countMatches">0</strong> matches</span>
-    </div>
+    
 
     <div id="results" class="results-area">
         <h1 class="status-msg">&#10548;</h1>
         <h1 class="status-msg">Drop a folder to begin scanning</h1>
     </div>
 
-    <p class="attribution">Kevin Henderson - <b>08/04/2026</b></p>
+
+    <p style="font-size:0.85rem;padding:0px 0px; gap:0px;bottom:0;position: absolute; margin: 0; backdrop-filter: blur(10px);"> Testing Branch v0.65 - <a href="https://niveknosredneh.github.io/projects/pdf/"> Visit Stable branch </a>
+    <br>Kevin Henderson - <b>13/04/2026</b></p>
 </div>
 
 <div id="resizer"></div>
 
 <div class="viewer-container">
-    <div id="viewerLoader">
-        <div class="spinner"></div>
-        <div class="loader-details">
-            <div class="loader-filename" id="loaderFilename">Loading PDF...</div>
-            <div class="loader-status" id="loaderStatus"></div>
-            <div class="loader-progress-bar"><div class="loader-progress-fill" id="loaderProgressFill"></div></div>
-        </div>
-    </div>
-
     <div class="viewer-toolbar">
         <div class="toolbar-section toolbar-zoom">
             <button onclick="zoomOut()" title="Zoom Out (Ctrl+-)">-</button>
@@ -83,10 +73,17 @@
     </div>
 
     <div class="viewer-scroll" id="viewerScroll">
+        <div id="viewerLoader">
+            <div class="spinner"></div>
+            <div class="loader-details">
+                <div class="loader-filename" id="loaderFilename">Loading PDF...</div>
+                <div class="loader-status" id="loaderStatus"></div>
+                <div class="loader-progress-bar"><div class="loader-progress-fill" id="loaderProgressFill"></div></div>
+            </div>
+        </div>
         <div id="pdfViewer"></div>
     </div>
     <div class="heatmap-track" id="heatmapTrack"></div>
-    <div class="heatmap-thumb" id="heatmapThumb"></div>
 </div>
 
 <div id="keywordManager">

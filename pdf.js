@@ -26,7 +26,7 @@ let renderTask = null;
 let textPageCache = {};
 let docTextCache = {};
 
-let smoothScrollEnabled = true;
+let smoothScrollEnabled = false;
 let isNavigating = false;
 
 let bgRenderRunning = false;
@@ -53,7 +53,6 @@ const resultsArea = document.getElementById('results');
 const progressBar = document.getElementById('progressBar');
 const sidebar = document.getElementById('sidebar');
 const heatmapTrack = document.getElementById('heatmapTrack');
-const heatmapThumb = document.getElementById('heatmapThumb');
 
 function toggleTheme() {
     const html = document.documentElement;
@@ -112,7 +111,7 @@ function toggleSettings(e) {
     
     const label = document.createElement('span');
     label.className = 'toggle-label';
-    label.textContent = 'Animate PDF Scroll';
+    label.textContent = 'Animate PDF Scroll ';
     animateBtn.appendChild(label);
     
     const state = document.createElement('span');
@@ -155,8 +154,6 @@ function toggleAnimate() {
 // ========== SIDEBAR / SCANNING ==========
 
 function updateStats() {
-    document.getElementById('countDocs').textContent = totalDocsFound;
-    document.getElementById('countMatches').textContent = totalMatchesFound;
 }
 
 function clearAllResults() {
@@ -569,7 +566,7 @@ function showSearchResults() {
     } else {
         navGroup.classList.remove('active');
         navSep.style.display = 'none';
-        // matchCounter.textContent = 'No matches';
+        
         matchTotal.textContent = '0';
         matchInput.value = '';
         updateSidebarBadge();
@@ -589,7 +586,6 @@ function cycleSearch(query) {
             navGroup.classList.add('active');
             navSep.style.display = '';
             currentMatchIndex = (currentMatchIndex + 1) % searchResults.length;
-            // matchCounter.textContent = `${currentMatchIndex + 1} / ${searchResults.length}`;
             matchTotal.textContent = searchResults.length;
             matchInput.max = searchResults.length;
             matchInput.value = currentMatchIndex + 1;
@@ -670,7 +666,12 @@ function updateSidebarBadge() {
     badges.forEach(badge => {
         const k = badge.dataset.keyword;
         const total = parseInt(badge.dataset.count) || 0;
-        if (k === activeKeyword && currentMatchIndex >= 0) {
+        const cardUrl = badge.closest('.doc-card').dataset.url || '';
+        
+        const isCurrentFile = cardUrl === currentDocUrl;
+        const isActiveKeyword = k === activeKeyword;
+        
+        if (isCurrentFile && isActiveKeyword && currentMatchIndex >= 0) {
             const current = currentMatchIndex + 1;
             const minWidth = Math.max(2, total.toString().length);
             const currentStr = current.toString().padStart(minWidth, ' ');
@@ -917,7 +918,6 @@ function goToMatch(index) {
     if (searchResults.length === 0) return;
 
     currentMatchIndex = ((index % searchResults.length) + searchResults.length) % searchResults.length;
-    // matchCounter.textContent = `${currentMatchIndex + 1} / ${searchResults.length}`;
     matchInput.value = currentMatchIndex + 1;
     updateSidebarBadge();
 
@@ -987,7 +987,6 @@ function clearSearch() {
     keywordSelect.value = '';
     matchInput.value = '';
     matchTotal.textContent = '0';
-    // matchCounter.textContent = '0 / 0';
     updateSidebarBadge();
 }
 
@@ -996,11 +995,8 @@ function clearSearch() {
 function updateHeatmap() {
     if (searchResults.length === 0 || !pdfDoc) {
         heatmapTrack.innerHTML = '';
-        heatmapThumb.style.display = 'none';
         return;
     }
-
-    heatmapThumb.style.display = '';
 
     const toolbarHeight = document.querySelector('.viewer-toolbar').offsetHeight;
     const containerHeight = document.querySelector('.viewer-container').offsetHeight;
@@ -1051,52 +1047,7 @@ function updateHeatmap() {
 
         offsetY += pageHeight + 32;
     }
-
-    const maxScroll = viewerScroll.scrollHeight - viewerScroll.clientHeight;
-    const scrollRatio = maxScroll > 0 ? viewerScroll.scrollTop / maxScroll : 0;
-    const thumbHeight = Math.max(15, (viewerScroll.clientHeight / viewerScroll.scrollHeight) * heatmapHeight);
-    const thumbTop = toolbarHeight + heatmapTopOffset + scrollRatio * (heatmapHeight - thumbHeight);
-
-    heatmapThumb.style.top = Math.max(toolbarHeight + heatmapTopOffset, Math.min(toolbarHeight + heatmapTopOffset + heatmapHeight - thumbHeight, thumbTop)) + 'px';
-    heatmapThumb.style.height = thumbHeight + 'px';
 }
-
-function scrollToHeatmapPosition(e) {
-    if (!pdfDoc) return;
-
-    const toolbarHeight = document.querySelector('.viewer-toolbar').offsetHeight;
-    const containerHeight = document.querySelector('.viewer-container').offsetHeight;
-    const scrollableHeight = containerHeight - toolbarHeight;
-    const heatmapTopOffset = 15;
-    const heatmapBottomOffset = 25;
-    const heatmapHeight = scrollableHeight - heatmapTopOffset - heatmapBottomOffset;
-
-    const rect = document.querySelector('.viewer-container').getBoundingClientRect();
-    const clickY = e.clientY - rect.top;
-    const relativeY = Math.max(0, Math.min(1, (clickY - toolbarHeight - heatmapTopOffset) / heatmapHeight));
-
-    viewerScroll.scrollTop = relativeY * (viewerScroll.scrollHeight - viewerScroll.clientHeight);
-}
-
-heatmapTrack.addEventListener('click', scrollToHeatmapPosition);
-heatmapThumb.addEventListener('click', scrollToHeatmapPosition);
-
-let heatmapDragging = false;
-heatmapThumb.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    heatmapDragging = true;
-    document.body.style.cursor = 'grabbing';
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!heatmapDragging) return;
-    scrollToHeatmapPosition(e);
-});
-
-document.addEventListener('mouseup', () => {
-    heatmapDragging = false;
-    document.body.style.cursor = '';
-});
 
 // ========== MOBILE (disabled) ==========
 
@@ -1175,6 +1126,7 @@ document.addEventListener('keydown', (e) => {
 function renderCard(name, counts, url) {
     const card = document.createElement('div');
     card.className = 'doc-card';
+    card.dataset.url = url;
     card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
     card.innerHTML = `<div class="doc-name">${name}</div>`;
 
@@ -1274,19 +1226,25 @@ async function extractPdfText(arrayBuffer, fileName, id) {
             pageTextData.push({ text: pageText, viewport: { width: vp.width, height: vp.height } });
         }
         
-        const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-        const counts = {};
-        let totalMatches = 0;
-        
-        for (const pageData of pageTextData) {
-            const matches = pageData.text.match(combinedRegex) || [];
-            for (const match of matches) {
-                const lower = match.toLowerCase();
-                const key = KEYWORDS.find(k => k.toLowerCase() === lower) || lower;
-                counts[key] = (counts[key] || 0) + 1;
-                totalMatches++;
-            }
+        const keywords = window.KEYWORDS || [];
+    if (keywords.length === 0) {
+        console.warn('No keywords available, skipping processing');
+        return;
+    }
+    
+    const combinedRegex = new RegExp(keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+    const counts = {};
+    let totalMatches = 0;
+    
+    for (const pageData of pageTextData) {
+        const matches = pageData.text.match(combinedRegex) || [];
+        for (const match of matches) {
+            const lower = match.toLowerCase();
+            const key = keywords.find(k => k.toLowerCase() === lower) || lower;
+            counts[key] = (counts[key] || 0) + 1;
+            totalMatches++;
         }
+    }
         
         if (totalMatches > 0) {
             docTextCache[id] = { totalPages: pdf.numPages, pages: pageTextData, fileName };
