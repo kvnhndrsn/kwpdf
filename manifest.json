@@ -1,0 +1,16 @@
+{
+    "name": "PDF Scanner",
+    "short_name": "PDF Scanner",
+    "description": "Scan PDFs for keywords",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#1a1a1a",
+    "theme_color": "#2d2d2d",
+    "icons": [
+        {
+            "src": "favicon.ico",
+            "sizes": "64x64 32x32 24x24 16x16",
+            "type": "image/x-icon"
+        }
+    ]
+}

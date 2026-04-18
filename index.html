@@ -3,11 +3,22 @@
 <head>
     <script src="jszip.min.js"></script>
     <script src="pdf.min.js"></script>
+    <script src="tesseract.min.js"></script>
+    <script src="ocr.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=no">
     <title>PDF Scanner</title>
     <link rel="stylesheet" href="pdf.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico">
     <script src="keywords.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./service-worker.js')
+                .then(reg => console.log('[App] Service Worker registered'))
+                .catch(err => console.error('[App] Service Worker failed:', err));
+        }
+    </script>
 </head>
 <body>
 
@@ -42,7 +53,9 @@
 
 
     <p style="font-size:0.85rem;padding:0px 0px; gap:0px;bottom:0;position: absolute; margin: 0; backdrop-filter: blur(10px);">
-    <br>Kevin Henderson - <b>13/04/2026</b></p>
+
+    Kevin Henderson - <b>13/04/2026 - </b>
+    <a href="https://github.com/niveknosredneh/pdf_scan_JS">pdf_scan_js</a></p>
 </div>
 
 <div id="resizer"></div>

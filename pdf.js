@@ -1,4 +1,34 @@
-pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
+// ========== REGEX HELPERS ==========
+
+let cachedKeywordRegex = null;
+let cachedKeywordList = null;
+
+function getKeywordRegex(keywords) {
+    if (!keywords) keywords = window.KEYWORDS || [];
+    if (!Array.isArray(keywords)) keywords = [];
+    
+    if (cachedKeywordRegex && cachedKeywordList === keywords) {
+        return cachedKeywordRegex;
+    }
+    
+    const pattern = keywords
+        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+    
+    try {
+        cachedKeywordRegex = new RegExp(`\\b(${pattern})\\b`, 'gi');
+    } catch (e) {
+        cachedKeywordRegex = new RegExp(`(${pattern})`, 'gi');
+    }
+    
+    cachedKeywordList = keywords;
+    return cachedKeywordRegex;
+}
+
+function clearKeywordRegexCache() {
+    cachedKeywordRegex = null;
+    cachedKeywordList = null;
+}
 
 // State
 let objectUrls = [];
@@ -28,6 +58,7 @@ let docTextCache = {};
 
 let smoothScrollEnabled = false;
 let isNavigating = false;
+let ocrScanning = false;
 
 let bgRenderRunning = false;
 let bgRenderQueue = [];
@@ -119,6 +150,31 @@ function toggleSettings(e) {
     animateBtn.appendChild(state);
     
     menu.appendChild(animateBtn);
+    
+    const ocrBtn = document.createElement('button');
+    ocrBtn.className = 'toggle-btn';
+    if (OCR.enabled) ocrBtn.classList.add('on');
+    ocrBtn.onclick = function() {
+        const newState = !ocrBtn.classList.contains('on');
+        ocrBtn.classList.toggle('on', newState);
+        OCR.setEnabled(newState);
+        ocrBtn.querySelector('.toggle-state').textContent = newState ? 'ON' : 'OFF';
+        if (objectUrls.length > 0) {
+            rescanAllDocuments();
+        }
+    };
+    
+    const ocrLabel = document.createElement('span');
+    ocrLabel.className = 'toggle-label';
+    ocrLabel.textContent = 'OCR Scan ';
+    ocrBtn.appendChild(ocrLabel);
+    
+    const ocrStateEl = document.createElement('span');
+    ocrStateEl.className = 'toggle-state';
+    ocrStateEl.textContent = OCR.enabled ? 'ON' : 'OFF';
+    ocrBtn.appendChild(ocrStateEl);
+    
+    menu.appendChild(ocrBtn);
     document.body.appendChild(menu);
     
     setTimeout(() => {
@@ -433,7 +489,7 @@ async function renderPageNow(pageNum, forceScale = null) {
 async function precomputeAllSearches() {
     if (searchCache._deduplicated) return;
     
-    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+    const combinedRegex = getKeywordRegex(KEYWORDS);
     
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const cached = textPageCache[pageNum];
@@ -519,8 +575,8 @@ async function computeSearchForQuery(query) {
         return;
     }
 
-    const source = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const localRegex = new RegExp(source, 'gi');
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
     const results = [];
 
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
@@ -1216,11 +1272,18 @@ async function processFiles(files) {
     const statusMsgs = resultsArea.querySelectorAll('.status-msg');
     statusMsgs.forEach(el => el.remove());
 
-    statusBar.textContent = `Scanning ${files.length} documents...`;
+    const ocrPrefix = OCR.enabled ? 'OCR triggered - ' : '';
+    statusBar.textContent = `${ocrPrefix}Scanning ${files.length} documents...`;
     progressBar.style.width = '0%';
 
     processed = 0;
     totalFiles = files.length;
+    
+    // Pre-initialize OCR worker if OCR is enabled
+    if (OCR.enabled) {
+        console.log('[PDF] Pre-initializing OCR worker...');
+        OCR.init().catch(err => console.error('[PDF] OCR init failed:', err));
+    }
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -1229,9 +1292,17 @@ async function processFiles(files) {
 
         const arrayBuffer = await file.arrayBuffer();
         
+        if (OCR.enabled) {
+            statusBar.textContent = `${ocrPrefix}Scanning ${i + 1}/${files.length}: ${file.name}...`;
+        }
+        
         await extractPdfText(arrayBuffer, file.name, url);
         
         updateProgressMainThread();
+        
+        if (OCR.enabled) {
+            statusBar.textContent = `${ocrPrefix}Scanned ${i + 1}/${files.length} documents...`;
+        }
     }
 }
 
@@ -1243,47 +1314,61 @@ async function extractPdfText(arrayBuffer, fileName, id) {
         };
         
         const pdfData = new Uint8Array(arrayBuffer);
-        const pdf = await pdfjsLib.getDocument({ data: pdfData, ownerDocument: fakeDoc }).promise;
         
-        const pageTextData = [];
+        let pageTextData;
+        let numPages = 0;
         
-        for (let p = 1; p <= pdf.numPages; p++) {
-            const page = await pdf.getPage(p);
-            const content = await page.getTextContent();
-            const vp = page.getViewport({ scale: 1.0 });
+        if (OCR.enabled) {
+            console.log('[PDF] Using OCR extraction for:', fileName);
+            const result = await OCR.extractText(pdfData);
+            pageTextData = result.pages;
+            numPages = result.numPages;
+        } else {
+            console.log('[PDF] Using native text extraction for:', fileName);
+            const pdf = await pdfjsLib.getDocument({ data: pdfData, ownerDocument: fakeDoc }).promise;
+            numPages = pdf.numPages;
+            pageTextData = [];
             
-            let pageText = '';
-            for (const item of content.items) {
-                pageText += item.str;
+            for (let p = 1; p <= numPages; p++) {
+                const page = await pdf.getPage(p);
+                const content = await page.getTextContent();
+                const vp = page.getViewport({ scale: 1.0 });
+                
+                let pageText = '';
+                for (const item of content.items) {
+                    pageText += item.str;
+                }
+                pageTextData.push({ text: pageText, viewport: { width: vp.width, height: vp.height } });
             }
-            pageTextData.push({ text: pageText, viewport: { width: vp.width, height: vp.height } });
         }
         
         const keywords = window.KEYWORDS || [];
-    if (keywords.length === 0) {
-        console.warn('No keywords available, skipping processing');
-        return;
-    }
-    
-    const combinedRegex = new RegExp(keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-    const counts = {};
-    let totalMatches = 0;
-    
-    for (const pageData of pageTextData) {
-        const text = pageData.text;
-        let match;
-        const regex = new RegExp(combinedRegex.source, 'gi');
-        while ((match = regex.exec(text)) !== null) {
-            if (match[0].length < 3) continue;
-            if (!/[a-zA-Z]/.test(match[0])) continue;
-            const lower = match[0].toLowerCase();
-            const key = keywords.find(k => k.toLowerCase() === lower) || lower;
-            counts[key] = (counts[key] || 0) + 1;
-            totalMatches++;
+        if (keywords.length === 0) {
+            console.warn('[PDF] No keywords available, skipping processing');
+            return;
         }
-    }
         
-        docTextCache[id] = { totalPages: pdf.numPages, pages: pageTextData, fileName };
+        const combinedRegex = getKeywordRegex(keywords);
+        const counts = {};
+        let totalMatches = 0;
+        
+        for (const pageData of pageTextData) {
+            const text = pageData.text || '';
+            let match;
+            const regex = new RegExp(combinedRegex.source, 'gi');
+            while ((match = regex.exec(text)) !== null) {
+                if (match[0].length < 3) continue;
+                if (!/[a-zA-Z]/.test(match[0])) continue;
+                const lower = match[0].toLowerCase();
+                const key = keywords.find(k => k.toLowerCase() === lower) || lower;
+                counts[key] = (counts[key] || 0) + 1;
+                totalMatches++;
+            }
+        }
+        
+        console.log('[PDF] Processed', fileName, '- Found', totalMatches, 'matches');
+        
+        docTextCache[id] = { totalPages: numPages, pages: pageTextData, fileName };
         totalDocsFound++;
         
         if (totalMatches > 0) {
@@ -1294,7 +1379,7 @@ async function extractPdfText(arrayBuffer, fileName, id) {
         }
         updateStats();
     } catch (err) {
-        console.error('Error processing PDF:', err);
+        console.error('[PDF] Error processing PDF:', err);
         updateProgressMainThread();
     }
 }
@@ -1452,54 +1537,90 @@ keywordListSelect.addEventListener('change', () => {
 });
 
 async function rescanAllDocuments() {
+    console.log('[PDF] rescanAllDocuments called, OCR.enabled:', OCR.enabled);
+    
     const viewerMsg = document.getElementById('viewerDropMsg');
     if (viewerMsg) viewerMsg.style.display = 'none';
     
-    statusBar.textContent = 'Rescanning documents...';
+    const ocrPrefix = OCR.enabled ? 'OCR triggered - ' : '';
+    statusBar.textContent = `${ocrPrefix}Scanning ${objectUrls.length} documents...`;
     progressBar.style.width = '0%';
+    
+    resultsArea.innerHTML = '';
     
     totalMatchesFound = 0;
     totalDocsFound = 0;
     let matchedInSession = 0;
     
-    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-    
-    for (let i = 0; i < objectUrls.length; i++) {
-        const url = objectUrls[i];
-        const cached = docTextCache[url];
+    if (OCR.enabled) {
+        console.log('[PDF] OCR mode enabled, re-extracting all documents with OCR');
+        ocrScanning = true;
         
-        if (!cached) continue;
+        // Pre-initialize OCR
+        await OCR.init().catch(err => console.error('[PDF] OCR init failed:', err));
         
-        const counts = {};
-        let fileTotalMatches = 0;
-        
-        for (let p = 0; p < cached.pages.length; p++) {
-            const text = cached.pages[p].text;
-            let match;
-            const regex = new RegExp(combinedRegex.source, 'gi');
-            while ((match = regex.exec(text)) !== null) {
-                if (match[0].length < 3) continue;
-                if (!/[a-zA-Z]/.test(match[0])) continue;
-                const lowerMatch = match[0].toLowerCase();
-                const originalKey = KEYWORDS.find(k => k.toLowerCase() === lowerMatch) || lowerMatch;
-                counts[originalKey] = (counts[originalKey] || 0) + 1;
-                fileTotalMatches++;
+        for (let i = 0; i < objectUrls.length; i++) {
+            const url = objectUrls[i];
+            const cached = docTextCache[url];
+            const fileName = cached?.fileName || `Document ${i + 1}`;
+            
+            statusBar.textContent = `${ocrPrefix}Scanning ${i + 1}/${objectUrls.length}: ${fileName}...`;
+            
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const arrayBuffer = await blob.arrayBuffer();
+                delete docTextCache[url];
+                await extractPdfText(arrayBuffer, fileName, url);
+            } catch (err) {
+                console.error('[PDF] OCR rescan error:', err);
             }
+            
+            const pct = Math.round(((i + 1) / objectUrls.length) * 100);
+            progressBar.style.width = pct + '%';
         }
+        ocrScanning = false;
+        console.log('[PDF] OCR rescan complete');
+    } else {
+        const combinedRegex = getKeywordRegex(KEYWORDS);
         
-        const fileName = cached.fileName || `Document ${i + 1}`;
-        totalDocsFound++;
-        
-        if (fileTotalMatches > 0) {
-            renderCard(fileName, counts, url);
-            totalMatchesFound += fileTotalMatches;
-            matchedInSession++;
-        } else {
-            renderNoMatchCard(fileName, url);
+        for (let i = 0; i < objectUrls.length; i++) {
+            const url = objectUrls[i];
+            const cached = docTextCache[url];
+            
+            if (!cached) continue;
+            
+            const counts = {};
+            let fileTotalMatches = 0;
+            
+            for (let p = 0; p < cached.pages.length; p++) {
+                const text = cached.pages[p].text;
+                let match;
+                const regex = new RegExp(combinedRegex.source, 'gi');
+                while ((match = regex.exec(text)) !== null) {
+                    if (match[0].length < 3) continue;
+                    if (!/[a-zA-Z]/.test(match[0])) continue;
+                    const lowerMatch = match[0].toLowerCase();
+                    const originalKey = KEYWORDS.find(k => k.toLowerCase() === lowerMatch) || lowerMatch;
+                    counts[originalKey] = (counts[originalKey] || 0) + 1;
+                    fileTotalMatches++;
+                }
+            }
+            
+            const fileName = cached.fileName || `Document ${i + 1}`;
+            totalDocsFound++;
+            
+            if (fileTotalMatches > 0) {
+                renderCard(fileName, counts, url);
+                totalMatchesFound += fileTotalMatches;
+                matchedInSession++;
+            } else {
+                renderNoMatchCard(fileName, url);
+            }
+            
+            const pct = Math.round(((i + 1) / objectUrls.length) * 100);
+            progressBar.style.width = pct + '%';
         }
-        
-        const pct = Math.round(((i + 1) / objectUrls.length) * 100);
-        progressBar.style.width = pct + '%';
     }
     
     updateStats();
@@ -1514,7 +1635,7 @@ async function rescanAllDocuments() {
 async function rescanWithNewKeywords() {
     if (!pdfDoc || !currentDocUrl) return;
 
-    const combinedRegex = new RegExp(KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+    const combinedRegex = getKeywordRegex(KEYWORDS);
     let totalMatches = 0;
     const docCounts = {};
 
