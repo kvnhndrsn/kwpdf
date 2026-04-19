@@ -1,4 +1,4 @@
- # pdf_scan_js
+ # pdfwordjs
 
 Scans a folder or zip of PDFs for a large list of keywords and jump between matches.
 
@@ -8,8 +8,8 @@ Scans a folder or zip of PDFs for a large list of keywords and jump between matc
 
 ```
 # clone repo 
-git clone https://github.com/niveknosredneh/pdf_scan_JS
-cd pdf_scan_JS/  
+git clone https://github.com/niveknosredneh/pdfwordjs
+cd pdfwordjs/  
 
 # download dependancies 
 curl -O https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
