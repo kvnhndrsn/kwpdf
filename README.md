@@ -8,7 +8,7 @@ Scans a folder or zip of PDFs for a large list of keywords and jump between matc
 
 ```
 # clone repo 
-git clone https://github.com/niveknosredneh/kwpdf
+git clone https://github.com/kvnhndrsn/kwpdf
 cd kwpdf/  
 
 # download dependancies 
