@@ -1,5 +1,12 @@
 // ========== REGEX HELPERS ==========
 
+// Stub OCR object (Tesseract disabled)
+const OCR = {
+    enabled: false,
+    init: async () => {},
+    extractText: async () => null
+};
+
 let cachedKeywordRegex = null;
 let cachedKeywordList = null;
 

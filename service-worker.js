@@ -1,17 +1,17 @@
-const CACHE_NAME = 'pdf-scanner-v1';
+const CACHE_NAME = 'pdf-scanner-v2';
 const ASSETS = [
     './',
     './index.html',
     './pdf.js',
     './pdf.css',
-    './ocr.js',
     './keywords.js',
     './keywords.json',
-    './pdf.min.js',
-    './pdf.worker.min.js',
-    './jszip.min.js',
-    './tesseract.min.js',
     './favicon.ico'
+];
+const CDN_URLS = [
+    'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 ];
 
 self.addEventListener('install', event => {
@@ -21,6 +21,21 @@ self.addEventListener('install', event => {
                 console.log('[SW] Caching app assets');
                 return cache.addAll(ASSETS).catch(err => {
                     console.warn('[SW] Some assets failed to cache:', err);
+                });
+            })
+            .then(() => {
+                return caches.open(CACHE_NAME).then(cache => {
+                    console.log('[SW] Caching CDN assets');
+                    return Promise.all(
+                        CDN_URLS.map(url => fetch(url, { mode: 'cors' })
+                            .then(response => {
+                                if (response.ok) {
+                                    cache.put(url, response);
+                                }
+                            })
+                    ).catch(err => {
+                        console.warn('[SW] CDN caching failed:', err);
+                    }));
                 });
             })
             .then(() => self.skipWaiting())
@@ -58,7 +73,7 @@ self.addEventListener('fetch', event => {
                             return response;
                         }
 
-                        if (event.request.url.includes('cdn.jsdelivr.net')) {
+                        if (event.request.url.includes('cdn.jsdelivr.net') || event.request.url.includes('cdnjs.cloudflare.com')) {
                             const responseToCache = response.clone();
                             caches.open(CACHE_NAME)
                                 .then(cache => {

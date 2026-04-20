@@ -11,11 +11,6 @@ Scans a folder or zip of PDFs for a large list of keywords and jump between matc
 git clone https://github.com/kvnhndrsn/kwpdf
 cd kwpdf/  
 
-# download dependancies 
-curl -O https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
-curl -O https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-curl -O https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
-
 # start python web server and open page
 python3 -m http.server 8895 &   
 xdg-open http://localhost:8895
