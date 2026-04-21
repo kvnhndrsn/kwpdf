@@ -8,13 +8,8 @@ Scans a folder or zip of PDFs for a large list of keywords and jump between matc
 
 ```
 # clone repo 
-git clone https://github.com/niveknosredneh/pdf_scan_JS
-cd pdf_scan_JS/  
-
-# download dependancies 
-curl -O https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
-curl -O https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-curl -O https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
+git clone https://github.com/kvnhndrsn/kwpdf
+cd kwpdf/  
 
 # start python web server and open page
 python3 -m http.server 8895 &   

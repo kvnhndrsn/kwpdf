@@ -1,5 +1,25 @@
 // ========== REGEX HELPERS ==========
 
+// Document type helpers
+function getFileType(filename) {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'pdf';
+    if (lower.endsWith('.docx')) return 'docx';
+    if (lower.endsWith('.doc')) return 'doc';
+    return null;
+}
+
+function getFileIcon(filename) {
+    const type = getFileType(filename);
+    if (type === 'pdf') {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="#e53935"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M9,13V19H7V13H9M15,15V19H13V15H15M11,11V19H9V11H11Z"/></svg>';
+    }
+    if (type === 'docx' || type === 'doc') {
+        return '<svg width="16" height="16" viewBox="0 0 24 24" fill="#1976d2"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M9,13V19H7V13H9M15,15V19H13V15H15M11,11V19H9V11H11Z"/></svg>';
+    }
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="#757575"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>';
+}
+
 // Stub OCR object (Tesseract disabled)
 const OCR = {
     enabled: false,
@@ -47,6 +67,9 @@ let totalMatchesFound = 0;
 let totalDocsFound = 0;
 let processed = 0;
 let totalFiles = 0;
+
+let currentDocType = 'pdf';
+let docContentCache = {}; // url -> { html, text, fileName }
 
 let pdfDoc = null;
 let currentDocUrl = "";
@@ -553,11 +576,13 @@ function clearAllResults() {
     totalMatchesFound = 0;
     totalDocsFound = 0;
     docDataCache = {};
+    docContentCache = {};
     expandedTreeItems.clear();
     updateStats();
 
     pdfDoc = null;
     currentDocUrl = "";
+    currentDocType = 'pdf';
     currentScale = 1.0;
     currentPage = 1;
     totalPages = 0;
@@ -570,6 +595,8 @@ function clearAllResults() {
     currentScale = 1.0;
     currentPage = 1;
     textPageCache = {};
+    docSearchResults = [];
+    docCurrentMatchIndex = -1;
 }
 
 async function loadPDF(fileUrl, keyword = "") {
@@ -659,6 +686,265 @@ async function loadPDF(fileUrl, keyword = "") {
         loaderProgressFill.style.width = '0%';
         console.error('PDF load error:', err);
     }
+}
+
+// ========== DOCX/DOC LOADING ==========
+
+function getDocTypeFromUrl(url) {
+    const dataCached = docDataCache[url];
+    if (dataCached?.type) {
+        return dataCached.type;
+    }
+    if (dataCached?.name) {
+        return getFileType(dataCached.name);
+    }
+    if (docContentCache[url]?.type) {
+        return docContentCache[url].type;
+    }
+    if (url.includes('.pdf')) return 'pdf';
+    if (url.includes('.docx')) return 'docx';
+    if (url.includes('.doc')) return 'doc';
+    return null;
+}
+
+async function loadDocument(fileUrl, keyword = "") {
+    const type = getDocTypeFromUrl(fileUrl);
+    if (type === 'pdf') {
+        loadPDF(fileUrl, keyword);
+    } else if (type === 'docx' || type === 'doc') {
+        loadDocxDoc(fileUrl, keyword);
+    } else {
+        loadPDF(fileUrl, keyword);
+    }
+}
+
+async function loadDocxDoc(fileUrl, keyword = "") {
+    if (currentDocUrl === fileUrl && docContentCache[fileUrl]) {
+        if (keyword) {
+            performDocSearch(keyword);
+        }
+        return;
+    }
+
+    cancelBgRender();
+    currentDocUrl = fileUrl;
+    const cachedInfo = docContentCache[fileUrl];
+    currentDocType = cachedInfo?.type || getDocTypeFromUrl(fileUrl);
+
+    loader.style.display = 'flex';
+    loaderFilename.textContent = 'Loading document...';
+    loaderStatus.textContent = 'Parsing...';
+    loaderProgressFill.style.width = '30%';
+    viewer.innerHTML = '';
+    clearSearch();
+    textPageCache = {};
+
+    try {
+        const cached = docContentCache[fileUrl];
+        if (!cached) throw new Error('Document not found in cache');
+
+        loaderProgressFill.style.width = '70%';
+        loaderStatus.textContent = 'Rendering...';
+
+        renderDocContent(cached.html, cached.text);
+        loaderProgressFill.style.width = '100%';
+        loader.style.display = 'none';
+
+        totalPages = 1;
+        currentPage = 1;
+        totalDocsFound = totalDocsFound;
+
+        updatePageInfo();
+        updateZoomDisplay();
+        pageInput.max = 1;
+        pageTotal.textContent = '1';
+
+        startDocSearchComputation();
+
+        if (keyword) {
+            performDocSearch(keyword);
+        }
+    } catch (err) {
+        loaderFilename.textContent = 'Error loading document';
+        loaderStatus.textContent = err.message;
+        loaderProgressFill.style.width = '0%';
+        console.error('Document load error:', err);
+    }
+}
+
+function renderDocContent(html, plainText) {
+    viewer.innerHTML = '';
+    textPageCache[1] = { text: plainText, viewport: { width: 800, height: 600 }, items: [] };
+
+    if (!html) {
+        viewer.innerHTML = '<div style="padding:20px;">No content to display</div>';
+        return;
+    }
+
+    docOriginalHtml = html;
+
+    const container = document.createElement('div');
+    container.className = 'doc-viewer';
+    container.style.width = '100%';
+    container.style.maxWidth = '800px';
+    container.style.margin = '0 auto';
+    container.style.padding = '20px';
+    container.style.boxSizing = 'border-box';
+    container.style.fontFamily = 'Times New Roman, serif';
+    container.style.fontSize = '12pt';
+    container.style.lineHeight = '1.6';
+    container.style.background = 'white';
+    container.style.color = 'black';
+    container.style.position = 'relative';
+    container.innerHTML = html;
+
+    container.querySelectorAll('table').forEach(table => {
+        table.style.borderCollapse = 'collapse';
+        table.style.width = '100%';
+    });
+    container.querySelectorAll('td, th').forEach(cell => {
+        cell.style.border = '1px solid #000';
+        cell.style.padding = '4px';
+    });
+
+    viewer.appendChild(container);
+}
+
+// ========== DOC SEARCH ==========
+
+let docSearchResults = [];
+let docCurrentMatchIndex = -1;
+let docOriginalHtml = null;
+
+async function startDocSearchComputation() {
+    const cached = docContentCache[currentDocUrl];
+    if (!cached) return;
+
+    const combinedRegex = getKeywordRegex(KEYWORDS);
+    const text = cached.text;
+    const results = [];
+    let match;
+
+    while ((match = combinedRegex.exec(text)) !== null) {
+        if (match[0].length < 3) continue;
+        if (!/[a-zA-Z]/.test(match[0])) continue;
+        results.push({
+            index: match.index,
+            text: match[0],
+            length: match[0].length
+        });
+    }
+
+    const counts = {};
+    results.forEach(r => {
+        const lower = r.text.toLowerCase();
+        const key = KEYWORDS.find(k => k.toLowerCase() === lower) || lower;
+        counts[key] = (counts[key] || 0) + 1;
+    });
+
+    searchCache._docCounts = counts;
+    searchCache._docResults = results;
+    populateKeywordSelect();
+}
+
+async function performDocSearch(query) {
+    if (!currentDocUrl || !docContentCache[currentDocUrl]) return;
+
+    const cached = docContentCache[currentDocUrl];
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const text = cached.text;
+    const results = [];
+    let match;
+
+    while ((match = localRegex.exec(text)) !== null) {
+        results.push({
+            index: match.index,
+            text: match[0],
+            length: match[0].length
+        });
+    }
+
+    docSearchResults = results;
+    docCurrentMatchIndex = 0;
+
+    if (results.length > 0) {
+        navGroup.classList.add('active');
+        navSep.style.display = '';
+        matchTotal.textContent = results.length;
+        matchInput.max = results.length;
+        matchInput.value = 1;
+        renderDocHighlights();
+        updateSidebarBadge();
+        goToDocMatch(0);
+    } else {
+        navGroup.classList.remove('active');
+        navSep.style.display = '';
+        matchTotal.textContent = '0';
+        matchInput.value = '';
+    }
+}
+
+function renderDocHighlights() {
+    const container = viewer.querySelector('.doc-viewer');
+    if (!container || !docOriginalHtml) return;
+
+    container.innerHTML = docOriginalHtml;
+
+    if (!docSearchResults.length) return;
+
+    const currentResult = docSearchResults[docCurrentMatchIndex];
+    if (!currentResult) return;
+
+    const plainText = docContentCache[currentDocUrl]?.text || '';
+    const matchText = plainText.substring(currentResult.index, currentResult.index + currentResult.length);
+    const escapedMatch = matchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escapedMatch, 'gi');
+
+    let marked = false;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, null);
+    const nodes = [];
+    let node;
+    while (node = walker.nextNode()) nodes.push(node);
+
+    for (const textNode of nodes) {
+        if (searchRegex.test(textNode.textContent)) {
+            searchRegex.lastIndex = 0;
+            const span = document.createElement('span');
+            span.innerHTML = textNode.textContent.replace(searchRegex, match => {
+                const isFirst = !marked;
+                marked = true;
+                return `<mark class="doc-highlight${isFirst ? ' current' : ''}">${match}</mark>`;
+            });
+            textNode.parentNode.replaceChild(span, textNode);
+        }
+    }
+
+    setTimeout(() => {
+        const currentMark = container.querySelector('.doc-highlight.current');
+        if (currentMark) {
+            currentMark.scrollIntoView({ behavior: smoothScrollEnabled ? 'smooth' : 'auto', block: 'center' });
+        }
+    }, 50);
+}
+
+function goToDocMatch(index) {
+    if (!docSearchResults.length) return;
+
+    docCurrentMatchIndex = ((index % docSearchResults.length) + docSearchResults.length) % docSearchResults.length;
+    matchInput.value = docCurrentMatchIndex + 1;
+    updateSidebarBadge();
+
+    const result = docSearchResults[docCurrentMatchIndex];
+    const plainText = docContentCache[currentDocUrl]?.text || '';
+    const textLen = plainText.length;
+    const targetFraction = result.index / textLen;
+    const scrollHeight = viewerScroll.scrollHeight - viewerScroll.clientHeight;
+    const targetTop = scrollHeight * targetFraction;
+
+    viewerScroll.scrollTo({ top: Math.max(0, targetTop), behavior: smoothScrollEnabled ? 'smooth' : 'auto' });
+
+    renderDocHighlights();
 }
 
 // ========== PAGE SETUP & RENDERING ==========
@@ -1199,7 +1485,11 @@ function populateKeywordSelect() {
 
 keywordSelect.addEventListener('change', () => {
     if (keywordSelect.value) {
-        performSearch(keywordSelect.value);
+        if (currentDocType === 'pdf') {
+            performSearch(keywordSelect.value);
+        } else {
+            performDocSearch(keywordSelect.value);
+        }
     }
 });
 
@@ -1529,14 +1819,18 @@ async function startPrerender() {
 }
 
 function findNext() {
-    if (searchResults.length > 0) {
+    if (currentDocType === 'pdf' && searchResults.length > 0) {
         goToMatch(currentMatchIndex + 1);
+    } else if (docSearchResults.length > 0) {
+        goToDocMatch(docCurrentMatchIndex + 1);
     }
 }
 
 function findPrev() {
-    if (searchResults.length > 0) {
+    if (currentDocType === 'pdf' && searchResults.length > 0) {
         goToMatch(currentMatchIndex - 1);
+    } else if (docSearchResults.length > 0) {
+        goToDocMatch(docCurrentMatchIndex - 1);
     }
 }
 
@@ -1700,18 +1994,19 @@ function getPathParts(file, baseFolderName) {
 
 function renderCard(fileName, counts, url, file = null) {
     const { name: baseName, folder } = getPathParts(file, null);
-    docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url };
-    
+    const type = getFileType(fileName);
+    docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url, type };
+
     if (currentLayout === 'tree') {
         renderResultsArea();
         return;
     }
-    
     const card = document.createElement('div');
     card.className = 'doc-card';
     card.dataset.url = url;
-    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
-    card.innerHTML = `<div class="doc-name">${fileName}</div>`;
+    card.dataset.type = type;
+    card.onclick = () => { setActiveCard(card); loadDocument(url); closeMobileSidebar(); };
+    card.innerHTML = `<div class="doc-name">${getFileIcon(fileName)} ${fileName}</div>`;
 
     const grid = document.createElement('div');
     grid.className = 'badge-grid';
@@ -1738,9 +2033,13 @@ function renderCard(fileName, counts, url, file = null) {
                 setActiveCard(card);
                 closeMobileSidebar();
                 if (currentDocUrl === url) {
-                    cycleSearch(k);
+                    if (type === 'pdf') {
+                        cycleSearch(k);
+                    } else {
+                        performDocSearch(k);
+                    }
                 } else {
-                    loadPDF(url, k);
+                    loadDocument(url, k);
                 }
             };
             grid.appendChild(b);
@@ -1753,17 +2052,20 @@ function renderCard(fileName, counts, url, file = null) {
 function renderNoMatchCard(fileName, url, file = null) {
     const { name: baseName, folder } = getPathParts(file, null);
     const finalName = fileName;
-    docDataCache[url] = { name: baseName, folder, fullPath: finalName, counts: {}, url };
-    
+    docDataCache[url] = { name: baseName, folder, fullPath: finalName, counts: {}, url, type };
+
     if (currentLayout === 'tree') {
         renderResultsArea();
         return;
     }
-    
-            const card = document.createElement('div');
-            card.className = 'doc-card doc-card-minimal' + (isActive ? ' active' : '');
-    card.onclick = () => { setActiveCard(card); loadPDF(url); closeMobileSidebar(); };
-    card.innerHTML = `<div class="doc-name">${fileName}</div>`;
+
+    const type = getFileType(fileName);
+    const card = document.createElement('div');
+    card.className = 'doc-card doc-card-minimal';
+    card.dataset.url = url;
+    card.dataset.type = type;
+    card.onclick = () => { setActiveCard(card); loadDocument(url); closeMobileSidebar(); };
+    card.innerHTML = `<div class="doc-name">${getFileIcon(fileName)} ${fileName}</div>`;
     resultsArea.appendChild(card);
 }
 
@@ -1796,7 +2098,7 @@ function renderTreeItem(doc) {
 
     const fileIcon = document.createElement('span');
     fileIcon.className = 'tree-file-icon';
-    fileIcon.textContent = '📄';
+    fileIcon.textContent = getFileIcon(doc.name);
     header.appendChild(fileIcon);
     
     const name = document.createElement('span');
@@ -1820,17 +2122,17 @@ function renderTreeItem(doc) {
             }
         }
         setActiveCardFromUrl(doc.url);
-        loadPDF(doc.url);
+        loadDocument(doc.url);
         closeMobileSidebar();
         renderResultsArea();
     };
-    
+
     item.appendChild(header);
-    
+
     if (isExpanded && totalMatches > 0) {
         const children = document.createElement('div');
         children.className = 'tree-children';
-        
+
         KEYWORDS.forEach(k => {
             const cnt = doc.counts[k] || 0;
             if (cnt > 0) {
@@ -1838,12 +2140,17 @@ function renderTreeItem(doc) {
                 child.className = 'tree-child';
                 child.onclick = () => {
                     if (doc.url === currentDocUrl) {
-                        cycleSearch(k);
+                        const type = getFileType(doc.url);
+                        if (type === 'pdf') {
+                            cycleSearch(k);
+                        } else {
+                            performDocSearch(k);
+                        }
                     } else {
-                        loadPDF(doc.url, k);
+                        loadDocument(doc.url, k);
                     }
                 };
-                
+
                 const kw = document.createElement('span');
                 kw.className = 'tree-child-kw';
                 kw.textContent = k;
@@ -1913,47 +2220,55 @@ function renderResultsArea() {
         const docs = Object.values(docDataCache);
     docs.forEach(doc => {
         const isActive = doc.url === currentDocUrl;
+        const type = getFileType(doc.name);
         if (Object.keys(doc.counts).length > 0) {
             const card = document.createElement('div');
             card.className = 'doc-card' + (isActive ? ' active' : '');
-                card.dataset.url = doc.url;
-                card.onclick = () => { setActiveCard(card); loadPDF(doc.url); closeMobileSidebar(); };
-                card.innerHTML = `<div class="doc-name">${doc.name}</div>`;
+            card.dataset.url = doc.url;
+            card.dataset.type = type;
+            card.onclick = () => { setActiveCard(card); loadDocument(doc.url); closeMobileSidebar(); };
+            card.innerHTML = `<div class="doc-name">${getFileIcon(doc.name)} ${doc.name}</div>`;
 
-                const grid = document.createElement('div');
-                grid.className = 'badge-grid';
+            const grid = document.createElement('div');
+            grid.className = 'badge-grid';
 
-                KEYWORDS.forEach(k => {
-                    const count = doc.counts[k] || 0;
-                    if (count > 0) {
-                        const b = document.createElement('div');
-                        b.className = 'badge';
-                        b.dataset.keyword = k;
-                        b.dataset.count = count;
-                        b.textContent = `${k}: ${count}`;
-                        b.onclick = (e) => {
-                            e.stopPropagation();
-                            setActiveCard(card);
-                            closeMobileSidebar();
-                            if (currentDocUrl === doc.url) {
+            KEYWORDS.forEach(k => {
+                const count = doc.counts[k] || 0;
+                if (count > 0) {
+                    const b = document.createElement('div');
+                    b.className = 'badge';
+                    b.dataset.keyword = k;
+                    b.dataset.count = count;
+                    b.textContent = `${k}: ${count}`;
+                    b.onclick = (e) => {
+                        e.stopPropagation();
+                        setActiveCard(card);
+                        closeMobileSidebar();
+                        if (currentDocUrl === doc.url) {
+                            if (type === 'pdf') {
                                 cycleSearch(k);
                             } else {
-                                loadPDF(doc.url, k);
+                                performDocSearch(k);
                             }
-                        };
-                        grid.appendChild(b);
-                    }
-                });
-                card.appendChild(grid);
-                resultsArea.appendChild(card);
-            } else {
-                const card = document.createElement('div');
-                card.className = 'doc-card doc-card-minimal';
-                card.onclick = () => { setActiveCard(card); loadPDF(doc.url); closeMobileSidebar(); };
-                card.innerHTML = `<div class="doc-name">${doc.name}</div>`;
-                resultsArea.appendChild(card);
-            }
-        });
+                        } else {
+                            loadDocument(doc.url, k);
+                        }
+                    };
+                    grid.appendChild(b);
+                }
+            });
+            card.appendChild(grid);
+            resultsArea.appendChild(card);
+        } else {
+            const card = document.createElement('div');
+            card.className = 'doc-card doc-card-minimal';
+            card.dataset.url = doc.url;
+            card.dataset.type = type;
+            card.onclick = () => { setActiveCard(card); loadDocument(doc.url); closeMobileSidebar(); };
+            card.innerHTML = `<div class="doc-name">${getFileIcon(doc.name)} ${doc.name}</div>`;
+            resultsArea.appendChild(card);
+        }
+    });
         
         if (docs.length === 0) {
             resultsArea.innerHTML = '<h1 class="status-msg">&#10548;</h1><h1 class="status-msg">Drop a folder to begin scanning</h1>';
@@ -1993,7 +2308,7 @@ async function processFiles(files) {
 
     const viewerMsg = document.getElementById('viewerDropMsg');
     if (viewerMsg) viewerMsg.style.display = 'none';
-    
+
     const statusMsgs = resultsArea.querySelectorAll('.status-msg');
     statusMsgs.forEach(el => el.remove());
 
@@ -2003,8 +2318,7 @@ async function processFiles(files) {
 
     processed = 0;
     totalFiles = files.length;
-    
-    // Pre-initialize OCR worker if OCR is enabled
+
     if (OCR.enabled) {
         console.log('[PDF] Pre-initializing OCR worker...');
         OCR.init().catch(err => console.error('[PDF] OCR init failed:', err));
@@ -2016,15 +2330,20 @@ async function processFiles(files) {
         objectUrls.push(url);
 
         const arrayBuffer = await file.arrayBuffer();
-        
+
         if (OCR.enabled) {
             statusBar.textContent = `${ocrPrefix}Scanning ${i + 1}/${files.length}: ${file.name}...`;
         }
-        
-        await extractPdfText(arrayBuffer, file.name, url, file);
-        
+
+        const type = getFileType(file.name);
+        if (type === 'pdf') {
+            await extractPdfText(arrayBuffer, file.name, url, file);
+        } else if (type === 'docx' || type === 'doc') {
+            await extractDocText(arrayBuffer, file.name, url, file);
+        }
+
         updateProgressMainThread();
-        
+
         if (OCR.enabled) {
             statusBar.textContent = `${ocrPrefix}Scanned ${i + 1}/${files.length} documents...`;
         }
@@ -2077,20 +2396,68 @@ async function extractPdfText(arrayBuffer, fileName, id, file = null) {
         }
         
         const keywords = window.KEYWORDS || [];
-        if (keywords.length === 0) {
-            console.warn('[PDF] No keywords available, skipping processing');
-            return;
-        }
-        
         const combinedRegex = getKeywordRegex(keywords);
         const counts = {};
         let totalMatches = 0;
-        
-        for (const pageData of pageTextData) {
-            const text = pageData.text || '';
-            let match;
+
+        if (combinedRegex) {
+            for (const pageData of pageTextData) {
+                const text = pageData.text || '';
+                let match;
+                const regex = new RegExp(combinedRegex.source, 'gi');
+                while ((match = regex.exec(text)) !== null) {
+                    if (match[0].length < 3) continue;
+                    if (!/[a-zA-Z]/.test(match[0])) continue;
+                    const lower = match[0].toLowerCase();
+                    const key = keywords.find(k => k.toLowerCase() === lower) || lower;
+                    counts[key] = (counts[key] || 0) + 1;
+                    totalMatches++;
+                }
+            }
+        }
+
+        console.log('[PDF] Processed', fileName, '- Found', totalMatches, 'matches');
+
+        docTextCache[id] = { totalPages: numPages, pages: pageTextData, fileName };
+        totalDocsFound++;
+
+        renderCard(fileName, counts, id, file);
+        totalMatchesFound += totalMatches;
+        updateStats();
+    } catch (err) {
+        console.error('[PDF] Error processing PDF:', err);
+        updateProgressMainThread();
+    }
+}
+
+async function extractDocText(arrayBuffer, fileName, id, file = null) {
+    try {
+        const type = getFileType(fileName);
+        let htmlContent = '';
+        let plainText = '';
+
+        if (type === 'docx' || type === 'doc') {
+            const htmlResult = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+            htmlContent = htmlResult.value;
+            const textResult = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+            plainText = textResult.value.replace(/\s+/g, ' ').trim();
+        }
+
+        if (!plainText && !htmlContent) {
+            console.warn('[DOC] No text extracted from:', fileName);
+            updateProgressMainThread();
+            return;
+        }
+
+        const keywords = window.KEYWORDS || [];
+        const combinedRegex = getKeywordRegex(keywords);
+        const counts = {};
+        let totalMatches = 0;
+        let match;
+
+        if (combinedRegex) {
             const regex = new RegExp(combinedRegex.source, 'gi');
-            while ((match = regex.exec(text)) !== null) {
+            while ((match = regex.exec(plainText)) !== null) {
                 if (match[0].length < 3) continue;
                 if (!/[a-zA-Z]/.test(match[0])) continue;
                 const lower = match[0].toLowerCase();
@@ -2099,21 +2466,17 @@ async function extractPdfText(arrayBuffer, fileName, id, file = null) {
                 totalMatches++;
             }
         }
-        
-        console.log('[PDF] Processed', fileName, '- Found', totalMatches, 'matches');
-        
-        docTextCache[id] = { totalPages: numPages, pages: pageTextData, fileName };
+
+        console.log('[DOC] Processed', fileName, '- Found', totalMatches, 'matches');
+
+        docContentCache[id] = { html: htmlContent, text: plainText, fileName, type };
         totalDocsFound++;
-        
-        if (totalMatches > 0) {
-            renderCard(fileName, counts, id, file);
-            totalMatchesFound += totalMatches;
-        } else {
-            renderNoMatchCard(fileName, id, file);
-        }
+
+        renderCard(fileName, counts, id, file);
+        totalMatchesFound += totalMatches;
         updateStats();
     } catch (err) {
-        console.error('[PDF] Error processing PDF:', err);
+        console.error('[DOC] Error processing document:', err);
         updateProgressMainThread();
     }
 }
@@ -2146,19 +2509,19 @@ async function handleDrop(e) {
         if (entry.isFile && entry.name.toLowerCase().endsWith('.zip')) {
             const zipFile = await new Promise((resolve) => entry.file(resolve));
             basePath = zipFile.name.replace(/\.zip$/i, '');
-            filesToProcess = filesToProcess.concat(await extractPdfsFromZip(zipFile));
+            filesToProcess = filesToProcess.concat(await extractAllFromZip(zipFile));
         } else {
             await traverseFileTree(entry, filesToProcess, '');
             basePath = entry.name;
         }
     }
-    
+
     if (filesToProcess.length === 0) {
         const viewerMsg = document.getElementById('viewerDropMsg');
         if (viewerMsg) viewerMsg.style.display = 'none';
         const statusMsgs = resultsArea.querySelectorAll('.status-msg');
         statusMsgs.forEach(el => el.remove());
-        statusBar.textContent = 'No PDF files found in folder';
+        statusBar.textContent = 'No supported files found in folder';
         progressBar.style.width = '0%';
     } else {
         processFiles(filesToProcess);
@@ -2199,7 +2562,8 @@ let basePath = '';
 
 async function traverseFileTree(item, fileList, baseDir = '') {
     const currentPath = baseDir ? baseDir + '/' + item.name : item.name;
-    if (item.isFile && item.name.toLowerCase().endsWith('.pdf')) {
+    const type = getFileType(item.name);
+    if (item.isFile && type) {
         const file = await new Promise((resolve) => item.file(resolve));
         file.relativePath = currentPath;
         fileList.push(file);
@@ -2213,9 +2577,10 @@ async function traverseFileTree(item, fileList, baseDir = '') {
 document.getElementById('folderInput').addEventListener('change', async (e) => {
     let filesToProcess = [];
     for (const file of e.target.files) {
+        const type = getFileType(file.name);
         if (file.name.toLowerCase().endsWith('.zip')) {
-            filesToProcess = filesToProcess.concat(await extractPdfsFromZip(file));
-        } else if (file.name.toLowerCase().endsWith('.pdf')) {
+            filesToProcess = filesToProcess.concat(await extractAllFromZip(file));
+        } else if (type) {
             file.relativePath = file.webkitRelativePath || file.name;
             filesToProcess.push(file);
         }
@@ -2223,17 +2588,23 @@ document.getElementById('folderInput').addEventListener('change', async (e) => {
     processFiles(filesToProcess);
 });
 
-async function extractPdfsFromZip(zipFile) {
+async function extractAllFromZip(zipFile) {
     const zip = await JSZip.loadAsync(zipFile);
     const extracted = [];
     const promises = [];
     zip.forEach((path, entry) => {
-        if (!entry.dir && path.toLowerCase().endsWith('.pdf')) {
-            promises.push(entry.async("blob").then(blob => {
-                const file = new File([blob], path, { type: "application/pdf" });
-                file.relativePath = path;
-                extracted.push(file);
-            }));
+        if (!entry.dir) {
+            const type = getFileType(path);
+            if (type) {
+                let mimeType = 'application/pdf';
+                if (type === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                else if (type === 'doc') mimeType = 'application/msword';
+                promises.push(entry.async("blob").then(blob => {
+                    const file = new File([blob], path, { type: mimeType });
+                    file.relativePath = path;
+                    extracted.push(file);
+                }));
+            }
         }
     });
     await Promise.all(promises);
