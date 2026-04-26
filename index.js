@@ -11,10 +11,10 @@ function getFileType(filename) {
 function getFileIcon(filename) {
     const type = getFileType(filename);
     if (type === 'pdf') {
-        return '<img src="pdf.svg" width="16" height="16" alt="pdf">';
+        return '<img src="icons/pdf.svg" width="16" height="16" alt="pdf">';
     }
     if (type === 'docx' || type === 'doc') {
-        return '<img src="docx.svg" width="16" height="16" alt="docx">';
+        return '<img src="icons/docx.svg" width="16" height="16" alt="docx">';
     }
     return '<svg width="16" height="16" viewBox="0 0 24 24" fill="#757575"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>';
 }

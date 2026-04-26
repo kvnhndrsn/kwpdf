@@ -1,6 +1,5 @@
  # KeyWord-PDF
 
-Scans a folder or zip of .pdf and .docx files for a large list of keywords and jump between matches.
 
 <img src="https://kvnhndrsn.github.io/projects/pdf.webp" height="400" align="middle">
 
