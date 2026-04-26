@@ -435,7 +435,8 @@ body {
 }
 .badge:hover { background: var(--green); color: white; border-color: var(--green); transform: translateY(-1px); }
 
-.status-msg { text-align: center; color: var(--grey-500); margin-top: 20px; }
+.status-msg { text-align: center; color: var(--grey-500); margin-top: 20px; opacity: 0.5; }
+.status-msg img { display: inline-block; margin: 0 4px; vertical-align: middle; }
 
 #resizer {
     width: 6px; cursor: col-resize; background: var(--grey-200); transition: background 0.2s;
@@ -761,7 +762,7 @@ body {
 
 .toggle-label { font-size: 0.75rem; color: var(--grey-400); }
 .dim { font-size: 0.7rem; color: var(--grey-500); }
-@media (max-width: 700px) {
+@media (max-width: 600px) {
 
 .mobile-toggle-sidebar {
     display: block !important;
@@ -908,7 +909,7 @@ body {
     width: max-content;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 600px) {
     #sidebar .settings-menu {
         position: absolute;
         bottom: 100%;
@@ -1017,7 +1018,7 @@ body {
     right: 0;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 600px) {
     .settings-menu {
         position: absolute;
         top: auto;

@@ -28,6 +28,47 @@ async function loadKeywords() {
     
     window.KEYWORD_LISTS = KEYWORD_LISTS;
     window.DEFAULT_LIST_NAME = DEFAULT_LIST_NAME;
+    window.KEYWORDS = KEYWORD_LISTS[currentListName] || [];
+    
+    window.populateKeywordSelect = function() {
+        window.keywordSelect.innerHTML = '';
+        window.KEYWORDS.forEach(k => {
+            if (window.searchCache[k] && window.searchCache[k].length > 0) {
+                const opt = document.createElement('option');
+                opt.value = k;
+                opt.textContent = `${k} (${window.searchCache[k].length})`;
+                if (k === window.activeKeyword) opt.selected = true;
+                window.keywordSelect.appendChild(opt);
+            }
+        });
+    };
+
+    window.toggleKeywordManager = function() {
+        const modal = document.getElementById('keywordManager');
+        if (!modal) {
+            console.error("Could not find keywordManager element in DOM");
+            return;
+        }
+
+        const isShowing = modal.classList.toggle('show');
+
+        if (isShowing) {
+            const modalSelector = document.getElementById('listSelector');
+            if (modalSelector && window.KEYWORD_LISTS) {
+                modalSelector.innerHTML = '';
+                for (const name of Object.keys(window.KEYWORD_LISTS)) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    modalSelector.appendChild(opt);
+                }
+            }
+            if (window.loadListIntoEditor) {
+                window.loadListIntoEditor();
+            }
+        }
+    };
+
     window.currentListName = currentListName;
     window.isCustomList = isCustomList;
     window.createList = createList;

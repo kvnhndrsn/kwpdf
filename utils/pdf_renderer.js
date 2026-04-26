@@ -210,3 +210,68 @@ window.renderPageNow = async function(pageNum, forceScale = null) {
         }
     }
 };
+
+// ========== ZOOM ==========
+
+window.setZoom = function(newScale, force = false) {
+    const clampedScale = Math.max(0.5, Math.min(4.0, newScale));
+    if (clampedScale === window.currentScale && !force) return;
+
+    const oldScrollTop = window.viewerScroll.scrollTop;
+    const oldScrollHeight = window.viewerScroll.scrollHeight;
+
+    window.currentScale = clampedScale;
+    window.updateZoomDisplay();
+
+    for (let i = 1; i <= window.totalPages; i++) {
+        const el = document.getElementById('page-' + i);
+        if (!el) continue;
+        const baseH = window.pageHeights[i] || 800;
+        const cached = window.textPageCache[i];
+        const baseW = cached ? cached.viewport.width : 600;
+        el.style.width = (baseW * window.currentScale) + 'px';
+        el.style.height = (baseH * window.currentScale) + 'px';
+        const canvas = el.querySelector('canvas');
+        if (canvas) {
+            canvas.style.width = (baseW * window.currentScale) + 'px';
+            canvas.style.height = (baseH * window.currentScale) + 'px';
+        }
+        const textLayer = el.querySelector('.textLayer');
+        if (textLayer) {
+            textLayer.style.width = (baseW * window.currentScale) + 'px';
+            textLayer.style.height = (baseH * window.currentScale) + 'px';
+        }
+    }
+
+    window.renderedPages.clear();
+    window.renderedScales = {};
+
+    requestAnimationFrame(() => {
+        const newScrollHeight = window.viewerScroll.scrollHeight;
+        const anchorFraction = oldScrollHeight > 0 ? oldScrollTop / oldScrollHeight : 0;
+        const newScrollTop = anchorFraction * newScrollHeight;
+        window.viewerScroll.scrollTop = newScrollTop + 30;
+
+        window.clearHighlights();
+        if (window.pageObserver) {
+            window.pageObserver.disconnect();
+            window.setupPageObserver();
+        }
+        if (window.searchResults.length > 0) {
+            window.renderAllHighlights();
+        }
+        window.updateHeatmap();
+    });
+};
+
+window.startPrerender = async function() {
+    if (window.searchResults.length === 0) return;
+
+    const pagesWithMatches = [...new Set(window.searchResults.map(r => r.page))];
+
+    for (const pageNum of pagesWithMatches) {
+        if (!window.isPageRendered(pageNum)) {
+            await window.renderPageNow(pageNum);
+        }
+    }
+};

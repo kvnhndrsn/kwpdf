@@ -46,8 +46,13 @@
     
 
     <div id="results" class="results-area">
-        <h1 class="status-msg">&#10548;</h1>
-        <h1 class="status-msg">Drop a folder to begin scanning</h1>
+        <h1 class="status-msg">
+        <img src="icons/folder.svg" width="32" height="32" alt="folder">
+        <img src="icons/pdf.svg" width="32" height="32" alt="pdf">
+        <img src="icons/docx.svg" width="32" height="32" alt="docx">
+        <img src="icons/zip.svg" width="32" height="32" alt="zip">
+        </h1>
+        <h2 class="status-msg">Drop here to begin scanning</h2>
     </div>
 
 
@@ -87,7 +92,10 @@
     </div>
 
     <div class="viewer-scroll" id="viewerScroll">
-        <div id="viewerDropMsg">&#10548; Drop a folder to begin scanning</div>
+        <div id="viewerDropMsg">
+        <h2>&#10548; Drop a folder to begin scanning</h2>
+        <p></p>
+    </div>
         <div id="viewerLoader">
             <div class="spinner"></div>
             <div class="loader-details">
@@ -140,6 +148,8 @@
     <script src="utils/docx_engine.js"></script>
     <script src="utils/pdf_search.js"></script>
     <script src="utils/pdf_renderer.js"></script>
+    <script src="utils/pdf_loader.js"></script>
+    <script src="utils/state_handler.js"></script>
     <script src="index.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
