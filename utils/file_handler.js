@@ -31,6 +31,41 @@ window.totalDocsFound = 0;
 window.processed = 0;
 window.totalFiles = 0;
 
+// ========== VERBOSE STATUS ==========
+
+window._verboseInterval = null;
+
+window.startVerboseStatus = function(fileName) {
+    const keywords = window.KEYWORDS || [];
+    const shortName = window.truncateFileName(fileName, 20);
+    if (keywords.length === 0) {
+        window.statusBar.textContent = `Scanning ${shortName}...`;
+        return;
+    }
+    let idx = 0;
+    window._verboseInterval = setInterval(() => {
+        window.statusBar.textContent = `Scanning ${shortName} for "${keywords[idx % keywords.length]}"`;
+        idx++;
+    }, 120);
+};
+
+window.truncateFileName = function(name, maxLen) {
+    if (name.length <= maxLen) return name;
+    const dot = name.lastIndexOf('.');
+    const ext = dot >= 0 ? name.slice(dot) : '';
+    const base = dot >= 0 ? name.slice(0, dot) : name;
+    const gap = 3; // "..."
+    const extBudget = Math.min(ext.length, 10);
+    const baseBudget = maxLen - gap - extBudget;
+    if (baseBudget <= 0) return name.slice(0, maxLen - gap) + '...';
+    return base.slice(0, baseBudget) + '...' + ext;
+};
+
+window.stopVerboseStatus = function() {
+    clearInterval(window._verboseInterval);
+    window._verboseInterval = null;
+};
+
 // ========== PROCESS FILES ==========
 
 window.processFiles = async function(files) {
@@ -42,7 +77,6 @@ window.processFiles = async function(files) {
     const statusMsgs = window.resultsArea.querySelectorAll('.status-msg');
     statusMsgs.forEach(el => el.remove());
 
-    window.statusBar.textContent = `Scanning ${files.length} documents...`;
     window.progressBar.style.width = '0%';
 
     window.processed = 0;
@@ -53,16 +87,24 @@ window.processFiles = async function(files) {
         const url = URL.createObjectURL(file);
         window.objectUrls.push(url);
 
-        const arrayBuffer = await file.arrayBuffer();
-        const type = window.getFileType(file.name);
+        window.startVerboseStatus(file.name);
 
-        if (type === 'pdf') {
-            await window.extractPdfText(arrayBuffer, file.name, url, file);
-        } else if (type === 'docx' || type === 'doc') {
-            await window.extractDocText(arrayBuffer, file.name, url, file);
+        // Render placeholder card immediately so user can click it
+        window.renderPlaceholderCard(file.name, url, file);
+
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const type = window.getFileType(file.name);
+
+            if (type === 'pdf') {
+                await window.extractPdfText(arrayBuffer, file.name, url, file);
+            } else if (type === 'docx' || type === 'doc') {
+                await window.extractDocText(arrayBuffer, file.name, url, file);
+            }
+        } finally {
+            window.stopVerboseStatus();
+            window.updateProgressMainThread();
         }
-
-        window.updateProgressMainThread();
     }
 };
 

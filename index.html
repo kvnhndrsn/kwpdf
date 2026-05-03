@@ -29,12 +29,14 @@
                 Open Folder
                 <input type="file" id="folderInput" webkitdirectory directory multiple accept=".pdf,.docx,.doc" style="display:none">
             </label>
-            <button class="btn-icon" id="settingsBtn" onclick="toggleSettings()" title="Settings">&#9881;</button>
-            <button class="btn-icon btn-icon-danger" onclick="clearAllResults()" title="Clear all">&#10005;</button>
+            <div class="toolbar-section">
+                <button class="btn-icon" id="settingsBtn" onclick="toggleSettings()" title="Settings">&#9881;</button>
+                <button class="btn-icon btn-icon-danger" onclick="clearAllResults()" title="Clear all">&#10005;</button>
+            </div>
         </div>
         <button class="mobile-toggle-sidebar" onclick="toggleMobileSidebar()" title="Toggle sidebar" style="display:none;">☰</button>
-        <div class="keyword-row">
-            <button class="btn-icon btn-icon-sm" onclick="toggleKeywordManager()" title="Manage keyword lists">&#9881;</button>
+        <div class="toolbar-section keyword-row">
+            <button class="btn-icon" onclick="toggleKeywordManager()" title="Manage keyword lists">&#9881;</button>
             <select class="list-select" id="keywordListSelect" title="Keyword list"></select>
         </div>
         <div class="progress-bar-wrap">
@@ -56,10 +58,6 @@
     </div>
 
 
-    <div class="attribution">
-        Kevin Henderson - <b>24/04/2026 - </b>
-        <a href="https://github.com/kvnhndrsn/kwpdf">kwpdf</a>
-    </div>
 </div>
 
 <div id="resizer"></div>

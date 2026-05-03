@@ -28,6 +28,7 @@ const resultsArea = document.getElementById('results');
 const progressBar = document.getElementById('progressBar');
 const sidebar = document.getElementById('sidebar');
 const statusBar = document.getElementById('statusBar');
+const verboseStatusBar = document.getElementById('verboseStatusBar');
 
 // Attach DOM refs to window for pdf.js access
 window.viewer = viewer;
@@ -48,6 +49,7 @@ window.resultsArea = resultsArea;
 window.progressBar = progressBar;
 window.sidebar = sidebar;
 window.statusBar = statusBar;
+window.verboseStatusBar = verboseStatusBar;
 
 // ========== SEARCH OVERLAY ==========
 
@@ -524,6 +526,29 @@ window.getPathParts = function(file, baseFolderName) {
     return { name: fileName, folder: baseFolderName || window.basePath || '' };
 };
 
+window.renderPlaceholderCard = function(fileName, url, file) {
+    const type = window.getFileType(fileName);
+    const { name: baseName, folder } = window.getPathParts(file, null);
+    window.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts: {}, url, type };
+
+    if (window.currentLayout === 'tree') {
+        window.renderResultsArea();
+        return;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'doc-card doc-card-minimal';
+    card.dataset.url = url;
+    card.dataset.type = type;
+    card.onclick = () => { window.setActiveCard(card); window.loadDocument(url); window.closeMobileSidebar(); };
+    card.innerHTML = `<div class="doc-name">${window.getFileIcon(fileName)} ${fileName}</div>`;
+
+    const grid = document.createElement('div');
+    grid.className = 'badge-grid';
+    card.appendChild(grid);
+    resultsArea.appendChild(card);
+};
+
 window.renderCard = function(fileName, counts, url, file) {
     const { name: baseName, folder } = window.getPathParts(file, null);
     const type = window.getFileType(fileName);
@@ -533,11 +558,19 @@ window.renderCard = function(fileName, counts, url, file) {
         window.renderResultsArea();
         return;
     }
-    const card = document.createElement('div');
-    card.className = 'doc-card';
-    card.dataset.url = url;
+
+    // Find existing placeholder card and update it
+    let card = resultsArea.querySelector(`.doc-card[data-url="${CSS.escape(url)}"]`);
+    if (!card) {
+        card = document.createElement('div');
+        card.className = 'doc-card';
+        card.dataset.url = url;
+        card.dataset.type = type;
+        card.onclick = () => { window.setActiveCard(card); window.loadDocument(url); window.closeMobileSidebar(); };
+        resultsArea.appendChild(card);
+    }
+
     card.dataset.type = type;
-    card.onclick = () => { window.setActiveCard(card); window.loadDocument(url); window.closeMobileSidebar(); };
     card.innerHTML = `<div class="doc-name">${window.getFileIcon(fileName)} ${fileName}</div>`;
 
     const grid = document.createElement('div');
@@ -578,27 +611,31 @@ window.renderCard = function(fileName, counts, url, file) {
         }
     });
     card.appendChild(grid);
-    resultsArea.appendChild(card);
 };
 
 window.renderNoMatchCard = function(fileName, url, file) {
     const { name: baseName, folder } = window.getPathParts(file, null);
     const finalName = fileName;
-    window.docDataCache[url] = { name: baseName, folder, fullPath: finalName, counts: {}, url, type: window.getFileType(fileName) };
+    const type = window.getFileType(fileName);
+    window.docDataCache[url] = { name: baseName, folder, fullPath: finalName, counts: {}, url, type };
 
     if (window.currentLayout === 'tree') {
         window.renderResultsArea();
         return;
     }
 
-    const type = window.getFileType(fileName);
-    const card = document.createElement('div');
-    card.className = 'doc-card doc-card-minimal';
-    card.dataset.url = url;
+    let card = resultsArea.querySelector(`.doc-card[data-url="${CSS.escape(url)}"]`);
+    if (!card) {
+        card = document.createElement('div');
+        card.className = 'doc-card doc-card-minimal';
+        card.dataset.url = url;
+        card.dataset.type = type;
+        card.onclick = () => { window.setActiveCard(card); window.loadDocument(url); window.closeMobileSidebar(); };
+        resultsArea.appendChild(card);
+    }
+
     card.dataset.type = type;
-    card.onclick = () => { window.setActiveCard(card); window.loadDocument(url); window.closeMobileSidebar(); };
     card.innerHTML = `<div class="doc-name">${window.getFileIcon(fileName)} ${fileName}</div>`;
-    resultsArea.appendChild(card);
 };
 
 window.renderTreeItem = function(doc) {
@@ -814,7 +851,7 @@ window.setActiveCard = function(card) {
 
 window.setActiveCardFromUrl = function(url) {
     document.querySelectorAll('.doc-card').forEach(c => c.classList.remove('active'));
-    const card = document.querySelector(`.doc-card[data-url="${url}"]`);
+    const card = document.querySelector(`.doc-card[data-url="${CSS.escape(url)}"]`);
     if (card) card.classList.add('active');
     
     document.querySelectorAll('.tree-item').forEach(item => {
@@ -1025,6 +1062,7 @@ window.getTouchDist = function(e) {
 // ========== UPDATE FUNCTIONS ==========
 
 window.updateStats = function() {
+    if (window._verboseInterval) return; // don't overwrite verbose status
     if (window.totalMatchesFound > 0) {
         statusBar.textContent = `${window.totalMatchesFound} matches across ${window.totalDocsFound} document${window.totalDocsFound !== 1 ? 's' : ''}`;
     } else if (window.totalDocsFound > 0) {
@@ -1059,7 +1097,7 @@ window.updateSidebarBadge = function() {
 window.updateProgressMainThread = function() {
     window.processed++;
     progressBar.style.width = `${Math.round((window.processed / window.totalFiles) * 100)}%`;
-    
+
     if (window.processed === window.totalFiles) {
         window.renderResultsArea();
         if (window.totalMatchesFound === 0) {
@@ -1069,6 +1107,9 @@ window.updateProgressMainThread = function() {
         }
     }
 };
+
+// Set default status bar message
+statusBar.textContent = 'Ready';
 
 // ========== EVENT LISTENERS ==========
 
