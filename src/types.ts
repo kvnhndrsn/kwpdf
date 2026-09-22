@@ -12,6 +12,9 @@ export interface PageViewport {
     height: number;
     offsetX?: number;
     offsetY?: number;
+    /** The scale-1 viewport transform (PDF → viewport space), see pdf-coords.ts */
+    transform?: number[];
+    rotation?: number;
 }
 
 export interface PageCacheEntry {

@@ -1,6 +1,7 @@
 import { state } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
+import { projectItem } from './pdf-coords';
 import { fn, KEYWORDS } from './cross';
 
 state.searchResults = [];
@@ -78,15 +79,28 @@ export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, of
 
     const startCharFrac = start.item.text.length > 0
         ? (matchStart - start.charStart) / start.item.text.length : 0;
-    const sx = start.item.transform[4] + startCharFrac * start.item.width;
-    const offsetY = viewport.offsetY || 0;
-    const sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
-
     const endCharFrac = end.item.text.length > 0
         ? (matchEnd - end.charStart) / end.item.text.length : 1;
-    const endX = end.item.transform[4] + endCharFrac * end.item.width;
 
-    return { x: sx, y: sy, width: Math.max(endX - sx, 4), height: start.item.height };
+    const transform = viewport && viewport.transform;
+    let sx, sy, endX, height;
+    if (transform) {
+        const sp = projectItem(start.item, transform);
+        const ep = projectItem(end.item, transform);
+        sx = sp.x + startCharFrac * start.item.width * sp.dx;
+        sy = sp.top;
+        endX = ep.x + endCharFrac * end.item.width * ep.dx;
+        height = Math.max(start.item.height || 0, end.item.height || 0);
+    } else {
+        const offsetY = viewport.offsetY || 0;
+        sx = start.item.transform[4] + startCharFrac * start.item.width;
+        sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
+        endX = end.item.transform[4] + endCharFrac * end.item.width;
+        height = start.item.height;
+    }
+
+    const width = Math.max(endX - sx, 4);
+    return { x: sx, y: sy, width, height };
 }
 
 export async function precomputeAllSearches() {

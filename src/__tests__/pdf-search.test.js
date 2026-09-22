@@ -108,4 +108,70 @@ describe('computeMatchCoords', () => {
         expect(coords).toHaveProperty('height');
         expect(coords.width).toBeGreaterThanOrEqual(4);
     });
+
+    it('falls back to legacy math when no transform is present', () => {
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, offsetY: 20 };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
+        expect(coords.x).toBeCloseTo(0, 1);
+        expect(coords.y).toBeCloseTo((800 + 20) - (100 + 10), 1);
+        expect(coords.height).toBe(10);
+    });
+
+    it('projects coords through the y-flip transform on an unrotated page', () => {
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
+            { text: 'world', transform: [10, 0, 0, 10, 35, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
+        expect(coords.x).toBeCloseTo(0, 1);
+        expect(coords.y).toBeCloseTo(800 - (100 + 10), 1);
+        expect(coords.width).toBeCloseTo(30, 1);
+        expect(coords.height).toBe(10);
+    });
+
+    it('interpolates along the advance direction for a partial char offset', () => {
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(3, 5, viewport, textItems, offsetMap);
+        expect(coords.x).toBeCloseTo(18, 1);
+    });
+
+    it('projects coords for a 90-degree rotated page', () => {
+        // Raw page 500x800 with rotation 90 -> viewport 800x500, transform [0,1,1,0,0,0].
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 800, height: 500, transform: [0, 1, 1, 0, 0, 0] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
+        // raw (x, y) -> viewport (y, x); hello baseline raw (0, 100) -> (100, 0)
+        expect(coords.x).toBeCloseTo(100, 1);
+        expect(coords.y).toBeCloseTo(-10, 1);
+    });
+
+    it('honors a non-zero viewBox (cropBox) origin', () => {
+        // viewBox [50,0,550,800] -> transform [1,0,0,-1,-50,800]
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 100, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, -50, 800] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
+        expect(coords.x).toBeCloseTo(50, 1);
+        expect(coords.y).toBeCloseTo(800 - (100 + 10), 1);
+    });
 });

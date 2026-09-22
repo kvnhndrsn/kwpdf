@@ -1,4 +1,5 @@
 import type { PageCacheEntry, RawSearchResult, TextCoords, DocDataCacheEntry, PdfCacheEntry, DocxCacheEntry } from './types';
+import { projectItem } from './pdf-coords';
 
 const GS_CHUNK_SIZE = 20;
 
@@ -37,8 +38,8 @@ export function getTextCoords(
 ): TextCoords | null {
     if (!cached || !cached.items) return null;
 
-    const viewHeight = cached.viewport.height;
-    const offsetY = cached.viewport.offsetY || 0;
+    const viewport = cached.viewport;
+    const transform = viewport && viewport.transform;
     let startY = 0, startX = 0, endY = 0, endX = 0, height = 0;
     let charOffset = 0;
 
@@ -48,15 +49,27 @@ export function getTextCoords(
 
         if (startIndex >= itemStart && startIndex < itemEnd) {
             const frac = (startIndex - itemStart) / item.text.length;
-            startX = item.transform[4] + frac * item.width;
-            startY = (viewHeight + offsetY) - (item.transform[5] + item.height);
+            if (transform) {
+                const p = projectItem(item, transform);
+                startX = p.x + frac * item.width * p.dx;
+                startY = p.top;
+            } else {
+                startX = item.transform[4] + frac * item.width;
+                startY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
+            }
             height = item.height;
         }
 
         if (endIndex > itemStart && endIndex <= itemEnd) {
             const frac = (endIndex - itemStart) / item.text.length;
-            endX = item.transform[4] + frac * item.width;
-            endY = (viewHeight + offsetY) - (item.transform[5] + item.height);
+            if (transform) {
+                const p = projectItem(item, transform);
+                endX = p.x + frac * item.width * p.dx;
+                endY = p.top;
+            } else {
+                endX = item.transform[4] + frac * item.width;
+                endY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
+            }
             break;
         }
 

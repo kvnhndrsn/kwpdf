@@ -1,6 +1,7 @@
 import { state } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
+import { processTextContentAsync } from './pdf-search';
 import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS } from './cross';
 
 export function getFileType(filename) {
@@ -95,12 +96,19 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             const page = await pdf.getPage(p);
             const content = await page.getTextContent();
             const vp = page.getViewport({ scale: 1.0 });
-            const pageText = content.items.map(item => item.str).join('');
-            const textItems = [];
-            for (const item of content.items) {
-                textItems.push({ text: item.str, transform: item.transform, width: item.width, height: item.height });
-            }
-            pageTextData.push({ text: pageText, viewport: { width: vp.width, height: vp.height }, items: textItems });
+            const { text, items } = await processTextContentAsync(content);
+            pageTextData.push({
+                text,
+                viewport: {
+                    width: vp.width,
+                    height: vp.height,
+                    offsetX: vp.offsetX,
+                    offsetY: vp.offsetY,
+                    transform: vp.transform,
+                    rotation: vp.rotation
+                },
+                items
+            });
             if (numPages > 1) dom.statusBar.textContent = 'Extracting pages: ' + p + '/' + numPages;
         }
 

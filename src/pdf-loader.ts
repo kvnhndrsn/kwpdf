@@ -69,6 +69,12 @@ function loadPDF(fileUrl, keyword = '') {
             dom.loaderProgressFill.style.width = '60%';
 
             let cached = state.docTextCache[fileUrl];
+            if (cached && cached.pages && cached.pages.length > 0 && !cached.pages[0]?.viewport?.transform) {
+                // Cache written by an older/other extraction path (no viewport
+                // transform → wrong coords for rotated/offset-box pages). Rebuild.
+                delete state.docTextCache[fileUrl];
+                cached = null;
+            }
             if (!cached) {
                 dom.loaderFilename.textContent = 'Extracting text from loaded PDF...';
                 const extractPromises = [];
@@ -90,7 +96,14 @@ function loadPDF(fileUrl, keyword = '') {
                         const { text, items } = await processTextContentAsync(content);
                         return {
                             text,
-                            viewport: { width: viewport.width, height: viewport.height, offsetX: viewport.offsetX, offsetY: viewport.offsetY },
+                            viewport: {
+                                width: viewport.width,
+                                height: viewport.height,
+                                offsetX: viewport.offsetX,
+                                offsetY: viewport.offsetY,
+                                transform: viewport.transform,
+                                rotation: viewport.rotation
+                            },
                             items
                         };
                     });

@@ -2,6 +2,7 @@ import { state } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
+import { projectItem } from './pdf-coords';
 
 function scheduleIdle(fn, timeout = 300) {
     if ('requestIdleCallback' in window) {
@@ -294,7 +295,14 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
                 const processed = await processTextContentAsync(textContent);
                 state.textPageCache[pageNum] = {
                     text: processed.text,
-                    viewport: { width: vp1.width, height: vp1.height, offsetX: 0, offsetY: vp1.offsetY },
+                    viewport: {
+                        width: vp1.width,
+                        height: vp1.height,
+                        offsetX: vp1.offsetX,
+                        offsetY: vp1.offsetY,
+                        transform: vp1.transform,
+                        rotation: vp1.rotation
+                    },
                     items: processed.items
                 };
                 state.pageHeights[pageNum] = vp1.height;
@@ -338,7 +346,9 @@ function buildTextLayer(el, pageNum, renderScale, displayHeight) {
     const textContent = state.textPageCache[pageNum];
     if (!textContent || !textContent.items) return;
 
-    const offsetY = (textContent.viewport && textContent.viewport.offsetY) || 0;
+    const viewport = textContent.viewport;
+    const offsetY = (viewport && viewport.offsetY) || 0;
+    const transform = viewport && viewport.transform;
     const items = textContent.items;
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
@@ -356,11 +366,18 @@ function buildTextLayer(el, pageNum, renderScale, displayHeight) {
             const span = document.createElement('span');
             span.textContent = item.text;
             const t = item.transform;
-            const x = t[4] * renderScale;
-            const y = t[5] * renderScale;
-            const fontSize = Math.sqrt(t[0] * t[0] + t[1] * t[1]) * renderScale;
-            const itemH = (item.height || fontSize) * renderScale;
-            const top = (displayHeight + offsetY * renderScale) - y - itemH;
+            const fontSize1 = Math.sqrt(t[0] * t[0] + t[1] * t[1]);
+            const itemH1 = item.height || fontSize1 || 0;
+            let x, top;
+            if (transform) {
+                const p = projectItem(item, transform);
+                x = p.x * renderScale;
+                top = p.top * renderScale;
+            } else {
+                x = t[4] * renderScale;
+                top = (displayHeight + offsetY * renderScale) - t[5] * renderScale - itemH1 * renderScale;
+            }
+            const fontSize = fontSize1 * renderScale;
             span.style.cssText = 'position:absolute;left:' + x + 'px;top:' + top + 'px;font-size:' + fontSize + 'px;white-space:pre;color:transparent';
             fragment.appendChild(span);
         }

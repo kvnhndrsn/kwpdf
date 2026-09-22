@@ -105,6 +105,33 @@ describe('getTextCoords', () => {
         expect(coords).not.toBeNull();
         expect(coords.startX).toBeCloseTo(130, 1); // second item's transform[4]
     });
+
+    it('projects coords through the y-flip transform on an unrotated page', () => {
+        const cached = {
+            text: 'ab',
+            viewport: { width: 800, height: 600, transform: [1, 0, 0, -1, 0, 600] },
+            items: [{ text: 'ab', transform: [10, 0, 0, 10, 100, 200], width: 30, height: 12 }],
+        };
+        const coords = getTextCoords(cached, 0, 1);
+        expect(coords).not.toBeNull();
+        expect(coords.startX).toBeCloseTo(100, 1);
+        expect(coords.startY).toBeCloseTo(600 - 200 - 12, 1);
+        expect(coords.endX).toBeCloseTo(100 + (1 / 2) * 30, 1);
+        expect(coords.height).toBe(12);
+    });
+
+    it('projects coords for a rotated page', () => {
+        const cached = {
+            text: 'ab',
+            viewport: { width: 600, height: 800, transform: [0, 1, 1, 0, 0, 0] },
+            items: [{ text: 'ab', transform: [10, 0, 0, 10, 100, 200], width: 30, height: 12 }],
+        };
+        const coords = getTextCoords(cached, 0, 1);
+        expect(coords).not.toBeNull();
+        // raw (100, 200) -> viewport (200, 100)
+        expect(coords.startX).toBeCloseTo(200, 1);
+        expect(coords.startY).toBeCloseTo(100 - 12, 1);
+    });
 });
 
 describe('wrapIndex', () => {
