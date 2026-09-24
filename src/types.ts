@@ -21,6 +21,8 @@ export interface PageCacheEntry {
     text: string;
     viewport: PageViewport;
     items: TextItem[] | null;
+    /** Raw pdf.js TextContent (items + styles) used to build the selection text layer. */
+    raw?: any;
     /** @internal */
     _lastAccess?: number;
 }

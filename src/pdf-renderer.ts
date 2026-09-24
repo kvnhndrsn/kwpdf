@@ -2,7 +2,7 @@ import { state } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
-import { projectItem } from './pdf-coords';
+import { TextLayer } from 'pdfjs-dist';
 
 function scheduleIdle(fn, timeout = 300) {
     if ('requestIdleCallback' in window) {
@@ -15,6 +15,10 @@ function scheduleIdle(fn, timeout = 300) {
 state.pageHeights = {};
 state.renderedPages = new Set();
 state.renderedScales = {};
+
+// Active pdf.js selection text layers, keyed by page number.
+// The layer div instance is kept so zoom updates can re-layout in place.
+const textLayers = new Map();
 
 
 function getCanvasContext(canvas) {
@@ -64,6 +68,8 @@ export async function setupVirtualPages() {
         state.pageObserver.disconnect();
         state.pageObserver = null;
     }
+
+    teardownTextLayers();
 
     const pagePromises = [];
     for (let i = 1; i <= state.totalPages; i++) {
@@ -284,7 +290,7 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         }
 
         if (state.textPageCache[pageNum]) {
-            requestAnimationFrame(() => buildTextLayer(el, pageNum, renderScale, displayHeight));
+            requestAnimationFrame(() => buildTextLayer(el, pageNum));
             if (!forceScale && state.searchResults.length > 0) scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
         }
 
@@ -303,7 +309,8 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
                         transform: vp1.transform,
                         rotation: vp1.rotation
                     },
-                    items: processed.items
+                    items: processed.items,
+                    raw: textContent,
                 };
                 state.pageHeights[pageNum] = vp1.height;
 
@@ -312,10 +319,7 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
                     const rect = pe.getBoundingClientRect();
                     const viewH = dom.viewerScroll.clientHeight;
                     if (rect.bottom > -500 && rect.top < viewH + 500) {
-                        const cv = pe.querySelector('canvas');
-                        const s = parseFloat(cv.dataset.scale) || state.currentScale;
-                        const dh = parseFloat(cv.style.height) || (state.pageHeights[pageNum] * s);
-                        requestAnimationFrame(() => buildTextLayer(pe, pageNum, s, dh));
+                        requestAnimationFrame(() => buildTextLayer(pe, pageNum));
                         if (state.searchResults.length > 0) {
                             scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
                         }
@@ -337,57 +341,85 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
 }
 
 // ── text layer ──
+//
+// Selection / copy is provided by pdf.js's own TextLayer (per-run spans laid
+// out on the actual document font, stretched to the PDF advance widths and
+// rotated as needed). This keeps the highlighted range and the copied text in
+// sync with the canvas glyphs, fixing the previously-offset character mapping.
 
-function buildTextLayer(el, pageNum, renderScale, displayHeight) {
-    if (!el.isConnected) return;
-    const existing = el.querySelector('.textLayer');
-    if (existing) existing.remove();
-
-    const textContent = state.textPageCache[pageNum];
-    if (!textContent || !textContent.items) return;
-
-    const viewport = textContent.viewport;
-    const offsetY = (viewport && viewport.offsetY) || 0;
-    const transform = viewport && viewport.transform;
-    const items = textContent.items;
-    const textLayer = document.createElement('div');
-    textLayer.className = 'textLayer';
-    el.appendChild(textLayer);
-
-    const CHUNK = 200;
-    let idx = 0;
-
-    function processChunk() {
-        if (!el.isConnected) return;
-        const fragment = document.createDocumentFragment();
-        const end = Math.min(idx + CHUNK, items.length);
-        for (; idx < end; idx++) {
-            const item = items[idx];
-            const span = document.createElement('span');
-            span.textContent = item.text;
-            const t = item.transform;
-            const fontSize1 = Math.sqrt(t[0] * t[0] + t[1] * t[1]);
-            const itemH1 = item.height || fontSize1 || 0;
-            let x, top;
-            if (transform) {
-                const p = projectItem(item, transform);
-                x = p.x * renderScale;
-                top = p.top * renderScale;
-            } else {
-                x = t[4] * renderScale;
-                top = (displayHeight + offsetY * renderScale) - t[5] * renderScale - itemH1 * renderScale;
-            }
-            const fontSize = fontSize1 * renderScale;
-            span.style.cssText = 'position:absolute;left:' + x + 'px;top:' + top + 'px;font-size:' + fontSize + 'px;white-space:pre;color:transparent';
-            fragment.appendChild(span);
-        }
-        textLayer.appendChild(fragment);
-        if (idx < items.length) {
-            scheduleIdle(processChunk);
-        }
+function buildTextLayer(el, pageNum) {
+    const existingRef = textLayers.get(pageNum);
+    if (existingRef) {
+        if (existingRef.div.isConnected) return;
+        textLayers.delete(pageNum);
+        try { existingRef.layer.cancel(); } catch (e) {}
     }
 
-    processChunk();
+    const cached = state.textPageCache[pageNum];
+    if (!cached || !state.pdfDoc) return;
+    if (!el.querySelector('canvas')) return;
+
+    requestIdleOrTimeout(async () => {
+        if (!el.isConnected) return;
+        let raw = cached.raw;
+        try {
+            const page = await state.pdfDoc.getPage(pageNum);
+            if (!raw) {
+                raw = await page.getTextContent();
+                cached.raw = raw;
+            }
+            if (textLayers.has(pageNum)) return;
+            if (!el.isConnected || !el.querySelector('canvas')) return;
+
+            const scale = state.currentScale;
+            const viewport = page.getViewport({ scale });
+
+            const prevLayerDiv = el.querySelector('.textLayer');
+            if (prevLayerDiv) prevLayerDiv.remove();
+
+            const textLayer = document.createElement('div');
+            textLayer.className = 'textLayer';
+            textLayer.style.setProperty('--scale-factor', String(scale));
+            el.appendChild(textLayer);
+
+            const layer = new TextLayer({ textContentSource: raw, container: textLayer, viewport });
+            textLayers.set(pageNum, { layer, div: textLayer });
+            layer.render().catch(() => {});
+        } catch (err) {
+            console.warn('Text layer error:', (err as Error).message);
+            textLayers.delete(pageNum);
+        }
+    });
+}
+
+function requestIdleOrTimeout(run) {
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(run, { timeout: 400 });
+    } else {
+        setTimeout(run, 0);
+    }
+}
+
+function teardownTextLayers() {
+    for (const [, ref] of textLayers) {
+        try { ref.layer.cancel(); } catch (e) {}
+    }
+    textLayers.clear();
+}
+
+async function updateTextLayersAtScale(scale) {
+    for (const [pageNum, ref] of textLayers) {
+        try {
+            if (!ref.div.isConnected) {
+                textLayers.delete(pageNum);
+                try { ref.layer.cancel(); } catch (e) {}
+                continue;
+            }
+            const page = await state.pdfDoc.getPage(pageNum);
+            ref.div.style.setProperty('--scale-factor', String(scale));
+            ref.layer.update({ viewport: page.getViewport({ scale }) });
+        } catch (e) {}
+    }
 }
 
 function prerenderNearPages() {
@@ -464,6 +496,9 @@ export function setZoom(newScale, force = false) {
     fn.updateZoomDisplay();
     document.documentElement.style.setProperty('--pdf-scale', String(clampedScale));
 
+    // Re-layout any existing selection text layers to the new scale immediately
+    updateTextLayersAtScale(clampedScale).catch(() => {});
+
     const scaleRatio = clampedScale / oldScale;
 
     // CSS-resize all existing canvases for instant visual feedback
@@ -514,12 +549,11 @@ export function rebuildTextLayers() {
         if (!canvas) continue;
         if (!state.textPageCache[pageNum]) continue;
 
-        const s = parseFloat(canvas.dataset.scale) || state.currentScale;
-        const displayHeight = parseFloat(canvas.style.height) || (state.pageHeights[pageNum] * s);
-
-        requestAnimationFrame(() => buildTextLayer(el, pageNum, s, displayHeight));
-        if (state.searchResults.length > 0) scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
+        if (!textLayers.has(pageNum)) {
+            requestAnimationFrame(() => buildTextLayer(el, pageNum));
+        }
     }
+    if (textLayers.size > 0) updateTextLayersAtScale(state.currentScale).catch(() => {});
 }
 
 // ── search result pre-render ──
