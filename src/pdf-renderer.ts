@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, isCurrentGeneration } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
@@ -19,6 +19,11 @@ state.renderedScales = {};
 // Active pdf.js selection text layers, keyed by page number.
 // The layer div instance is kept so zoom updates can re-layout in place.
 const textLayers = new Map();
+
+// Per-page ownership token for renderPageNow. Only the newest call for a page
+// may clear shared render state, so a late-finishing render cannot clobber a
+// newer one.
+const renderTokens = new Map();
 
 
 function getCanvasContext(canvas) {
@@ -57,6 +62,33 @@ function promiseMapConcurrent(items, fn, concurrency) {
 }
 
 // ── initialization ──
+
+/** Release every PDF-scoped resource: render tasks, page observer, selection
+ *  layers and the pdf.js document itself. Safe to call when nothing is open. */
+export function teardownPdf() {
+    if (state.pageObserver) {
+        state.pageObserver.disconnect();
+        state.pageObserver = null;
+    }
+
+    for (const [, t] of state.renderTasks) {
+        if (t && typeof t.cancel === 'function') {
+            try { t.cancel(); } catch (e) {}
+        }
+    }
+    state.renderTasks.clear();
+    renderTokens.clear();
+    teardownTextLayers();
+    removeScrollListener();
+
+    if (state.pdfDoc) {
+        try { state.pdfDoc.destroy(); } catch (e) { console.warn('Error destroying previous PDF:', e); }
+    }
+    state.pdfDoc = null;
+    state.renderedPages.clear();
+    state.renderedScales = {};
+    state.pageHeights = {};
+}
 
 export async function setupVirtualPages() {
     dom.viewer.innerHTML = '';
@@ -108,17 +140,35 @@ export async function setupVirtualPages() {
 
 // ── observer ──
 
+let _scrollListenerAttached = false;
+
+function onViewerScroll() {
+    _isScrolling = true;
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(() => {
+        _isScrolling = false;
+        if (_needsRefresh && !_rendering) refreshVisiblePages();
+    }, 200);
+}
+
+function addScrollListener() {
+    if (_scrollListenerAttached) return;
+    dom.viewerScroll.addEventListener('scroll', onViewerScroll, { passive: true });
+    _scrollListenerAttached = true;
+}
+
+function removeScrollListener() {
+    if (!_scrollListenerAttached) return;
+    dom.viewerScroll.removeEventListener('scroll', onViewerScroll);
+    _scrollListenerAttached = false;
+    clearTimeout(_scrollTimer);
+    _scrollTimer = null;
+}
+
 function setupPageObserver() {
     if (state.pageObserver) state.pageObserver.disconnect();
 
-    dom.viewerScroll.addEventListener('scroll', () => {
-        _isScrolling = true;
-        clearTimeout(_scrollTimer);
-        _scrollTimer = setTimeout(() => {
-            _isScrolling = false;
-            if (_needsRefresh && !_rendering) refreshVisiblePages();
-        }, 200);
-    }, { passive: true });
+    addScrollListener();
 
     state.pageObserver = new IntersectionObserver(() => {
         if (_rendering) { _needsRefresh = true; return; }
@@ -239,10 +289,15 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
     if (!state.pdfDoc) return;
     if (state.renderTasks.has(pageNum)) return;
 
+    const generation = state.docGeneration;
+    const token = {};
+    renderTokens.set(pageNum, token);
     state.renderTasks.set(pageNum, null);
 
     try {
         const page = await state.pdfDoc.getPage(pageNum);
+        if (!isCurrentGeneration(generation)) return;
+        if (renderTokens.get(pageNum) !== token) return;
         if (!state.renderTasks.has(pageNum)) return;
 
         const viewport = page.getViewport({ scale: effectiveScale });
@@ -278,6 +333,9 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
 
         await renderTask.promise;
 
+        if (!isCurrentGeneration(generation)) return;
+        if (renderTokens.get(pageNum) !== token) return;
+
         state.renderedPages.add(pageNum);
         state.renderedScales[pageNum] = Math.max(state.renderedScales[pageNum] || 0, renderScale);
 
@@ -299,6 +357,9 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         if (!state.textPageCache[pageNum]) {
             page.getTextContent().then(async textContent => {
                 const processed = await processTextContentAsync(textContent);
+                if (!isCurrentGeneration(generation)) return;
+                if (renderTokens.get(pageNum) !== token) return;
+
                 state.textPageCache[pageNum] = {
                     text: processed.text,
                     viewport: {
@@ -328,7 +389,7 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
             }).catch(() => {});
         }
     } catch (err) {
-        if ((err as Error).name !== 'RenderingCancelledException') {
+        if ((err as Error).name !== 'RenderingCancelledException' && isCurrentGeneration(generation)) {
             console.warn('Render error:', (err as Error).message);
             const pe = document.getElementById('page-' + pageNum);
             if (pe) {
@@ -336,7 +397,10 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
             }
         }
     } finally {
-        state.renderTasks.delete(pageNum);
+        if (renderTokens.get(pageNum) === token) {
+            renderTokens.delete(pageNum);
+            state.renderTasks.delete(pageNum);
+        }
     }
 }
 
@@ -359,13 +423,18 @@ function buildTextLayer(el, pageNum) {
     if (!cached || !state.pdfDoc) return;
     if (!el.querySelector('canvas')) return;
 
+    const generation = state.docGeneration;
+
     requestIdleOrTimeout(async () => {
         if (!el.isConnected) return;
+        if (!isCurrentGeneration(generation)) return;
         let raw = cached.raw;
         try {
             const page = await state.pdfDoc.getPage(pageNum);
+            if (!isCurrentGeneration(generation)) return;
             if (!raw) {
                 raw = await page.getTextContent();
+                if (!isCurrentGeneration(generation)) return;
                 cached.raw = raw;
             }
             if (textLayers.has(pageNum)) return;
@@ -384,8 +453,15 @@ function buildTextLayer(el, pageNum) {
 
             const layer = new TextLayer({ textContentSource: raw, container: textLayer, viewport });
             textLayers.set(pageNum, { layer, div: textLayer });
-            layer.render().catch(() => {});
+            layer.render().catch(() => {
+                // A failed render must not leave a connected but empty layer
+                // behind, or this page can never rebuild its selection layer.
+                if (textLayers.get(pageNum)?.layer !== layer) return;
+                textLayers.delete(pageNum);
+                if (textLayer.isConnected) textLayer.remove();
+            });
         } catch (err) {
+            if (!isCurrentGeneration(generation)) return;
             console.warn('Text layer error:', (err as Error).message);
             textLayers.delete(pageNum);
         }
@@ -408,6 +484,7 @@ function teardownTextLayers() {
 }
 
 async function updateTextLayersAtScale(scale) {
+    const generation = state.docGeneration;
     for (const [pageNum, ref] of textLayers) {
         try {
             if (!ref.div.isConnected) {
@@ -416,6 +493,8 @@ async function updateTextLayersAtScale(scale) {
                 continue;
             }
             const page = await state.pdfDoc.getPage(pageNum);
+            if (!isCurrentGeneration(generation)) return;
+            if (textLayers.get(pageNum)?.layer !== ref.layer) continue;
             ref.div.style.setProperty('--scale-factor', String(scale));
             ref.layer.update({ viewport: page.getViewport({ scale }) });
         } catch (e) {}

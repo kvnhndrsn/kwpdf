@@ -6,6 +6,8 @@ export const state: State = {
     pdfDoc: null,
     currentDocUrl: '',
     currentDocType: 'pdf',
+    docGeneration: 0,
+    searchToken: 0,
     totalPages: 0,
     currentPage: 1,
     currentScale: 1.0,
@@ -93,3 +95,26 @@ export const state: State = {
         if (arr) arr.slice().forEach(cb => cb(data));
     },
 };
+
+/** Start a new document generation. Any in-flight async work holding an older
+ *  generation number must discard its result. */
+export function beginDocGeneration(): number {
+    state.docGeneration++;
+    return state.docGeneration;
+}
+
+/** True while the captured generation is still the active document. */
+export function isCurrentGeneration(generation: number): boolean {
+    return state.docGeneration === generation;
+}
+
+/** Claim a search request; later requests invalidate earlier ones. */
+export function beginSearch(): number {
+    state.searchToken++;
+    return state.searchToken;
+}
+
+/** True while the captured search request is still the newest one. */
+export function isCurrentSearch(token: number): boolean {
+    return state.searchToken === token;
+}

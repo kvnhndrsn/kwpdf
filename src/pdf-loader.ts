@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, beginDocGeneration, isCurrentGeneration } from './state';
 import * as dom from './dom';
 import { fn, pdfjsLib } from './cross';
 import { evictCaches } from './file-handler';
@@ -21,18 +21,35 @@ function getDocTypeFromUrl(url) {
     return null;
 }
 
+// Placeholder entry for a page whose text could not be extracted. Keeps the
+// cached pages array 1:1 with real page numbers so failures never shift the
+// page number of every following page.
+function emptyPageViewport(pageNum) {
+    const height = state.pageHeights[pageNum] || 800;
+    const el = document.getElementById('page-' + pageNum);
+    const width = parseFloat(el?.style.getPropertyValue('--base-w')) || 600;
+    return {
+        width,
+        height,
+        offsetX: 0,
+        offsetY: 0,
+        transform: [1, 0, 0, -1, 0, height],
+        rotation: 0
+    };
+}
+
 function loadPDF(fileUrl, keyword = '') {
     if (state.currentDocUrl === fileUrl && state.pdfDoc) {
         if (keyword) fn.performSearch(keyword);
         return;
     }
 
-    state.currentDocUrl = fileUrl;
+    const generation = beginDocGeneration();
 
-    if (state.pdfDoc) {
-        try { state.pdfDoc.destroy(); } catch (e) { console.warn('Error destroying previous PDF:', e); }
-        state.pdfDoc = null;
-    }
+    state.currentDocUrl = fileUrl;
+    state.currentDocType = 'pdf';
+
+    fn.teardownPdf();
 
     dom.viewer.style.display = '';
     dom.loader.style.display = 'flex';
@@ -53,17 +70,28 @@ function loadPDF(fileUrl, keyword = '') {
 
     (async () => {
         try {
-            state.pdfDoc = await pdfjsLib.getDocument(fileUrl).promise;
+            const loadingTask = pdfjsLib.getDocument(fileUrl);
+            const doc = await loadingTask.promise;
+
+            if (!isCurrentGeneration(generation)) {
+                // A newer document won the race; discard this one.
+                try { doc.destroy(); } catch (e) {}
+                return;
+            }
+
+            state.pdfDoc = doc;
             state.currentDocUrl = fileUrl;
-            state.totalPages = state.pdfDoc.numPages;
+            state.totalPages = doc.numPages;
 
             dom.loaderStatus.textContent = 'Setting up ' + state.totalPages + ' pages...';
             dom.loaderProgressFill.style.width = '30%';
             await fn.setupVirtualPages();
+            if (!isCurrentGeneration(generation)) return;
 
             dom.loaderStatus.textContent = 'Rendering first page...';
             dom.loaderProgressFill.style.width = '45%';
             if (!fn.isPageRendered(1)) await fn.renderPageNow(1);
+            if (!isCurrentGeneration(generation)) return;
 
             dom.loaderStatus.textContent = 'Extracting text content...';
             dom.loaderProgressFill.style.width = '60%';
@@ -77,10 +105,11 @@ function loadPDF(fileUrl, keyword = '') {
             }
             if (!cached) {
                 dom.loaderFilename.textContent = 'Extracting text from loaded PDF...';
+                const docRef = doc;
                 const extractPromises = [];
                 for (let p = 1; p <= state.totalPages; p++) {
                     extractPromises.push(
-                        state.pdfDoc.getPage(p).then(page =>
+                        docRef.getPage(p).then(page =>
                             page.getTextContent().then(content => ({
                                 pageNum: p,
                                 content,
@@ -90,24 +119,28 @@ function loadPDF(fileUrl, keyword = '') {
                     );
                 }
                 const allResults = await Promise.all(extractPromises);
-                const textPromises = allResults
-                    .filter(({ content }) => content)
-                    .map(async ({ content, viewport }) => {
-                        const { text, items } = await processTextContentAsync(content);
-                        return {
-                            text,
-                            viewport: {
-                                width: viewport.width,
-                                height: viewport.height,
-                                offsetX: viewport.offsetX,
-                                offsetY: viewport.offsetY,
-                                transform: viewport.transform,
-                                rotation: viewport.rotation
-                            },
-                            items
-                        };
-                    });
+                if (!isCurrentGeneration(generation)) return;
+
+                const textPromises = allResults.map(async ({ pageNum, content, viewport }) => {
+                    if (!content) {
+                        return { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                    }
+                    const { text, items } = await processTextContentAsync(content);
+                    return {
+                        text,
+                        viewport: {
+                            width: viewport.width,
+                            height: viewport.height,
+                            offsetX: viewport.offsetX,
+                            offsetY: viewport.offsetY,
+                            transform: viewport.transform,
+                            rotation: viewport.rotation
+                        },
+                        items
+                    };
+                });
                 const pageTextData = await Promise.all(textPromises);
+                if (!isCurrentGeneration(generation)) return;
                 dom.loaderProgressFill.style.width = '80%';
                 const fileName = state.docDataCache[fileUrl]?.name || 'Document';
                 cached = {
@@ -129,6 +162,7 @@ function loadPDF(fileUrl, keyword = '') {
                 dom.loaderProgressFill.style.width = '80%';
                 fn.rebuildTextLayers();
                 await fn.precomputeAllSearches();
+                if (!isCurrentGeneration(generation)) return;
                 state._gsPageCacheReady = true;
 
                 // Populate sidebar keyword counts from search results
@@ -144,6 +178,7 @@ function loadPDF(fileUrl, keyword = '') {
 
             // Auto-detect measurement scale from embedded metadata or page text
             const detected = await autoDetectScale(fileUrl);
+            if (!isCurrentGeneration(generation)) return;
             if (detected) {
                 setScale(detected);
                 const scaleInput = document.getElementById('scaleInput');
@@ -175,6 +210,7 @@ function loadPDF(fileUrl, keyword = '') {
 
             if (keyword) fn.performSearch(keyword);
         } catch (err) {
+            if (!isCurrentGeneration(generation)) return;
             dom.loaderFilename.textContent = 'Error loading PDF';
             dom.loaderStatus.textContent = err.message;
             dom.loaderProgressFill.style.width = '0%';

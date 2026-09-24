@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, isCurrentGeneration, beginSearch, isCurrentSearch } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { projectItem } from './pdf-coords';
@@ -108,6 +108,14 @@ export async function precomputeAllSearches() {
 
     const combinedRegex = getKeywordRegex(KEYWORDS);
 
+    if (!combinedRegex) {
+        (state.searchCache as any)._deduplicated = true;
+        state.emit('keywords-changed');
+        return;
+    }
+
+    const generation = state.docGeneration;
+
     for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
         const cached = state.textPageCache[pageNum];
         if (!cached) continue;
@@ -116,6 +124,7 @@ export async function precomputeAllSearches() {
         const viewport = cached.viewport;
 
         if (!cached.items) await fetchPageItems(pageNum);
+        if (!isCurrentGeneration(generation)) return;
         const textItems = cached.items;
         if (!textItems || textItems.length === 0) continue;
 
@@ -133,6 +142,7 @@ export async function precomputeAllSearches() {
         }
     }
 
+    if (!isCurrentGeneration(generation)) return;
     (state.searchCache as any)._deduplicated = true;
     state.emit('keywords-changed');
 }
@@ -144,6 +154,7 @@ async function computeSearchForQuery(query) {
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
     const results = [];
+    const generation = state.docGeneration;
 
     for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
         const cached = state.textPageCache[pageNum];
@@ -153,6 +164,7 @@ async function computeSearchForQuery(query) {
         const viewport = cached.viewport;
 
         if (!cached.items) await fetchPageItems(pageNum);
+        if (!isCurrentGeneration(generation)) return;
         const textItems = cached.items;
         if (!textItems || textItems.length === 0) continue;
 
@@ -167,6 +179,7 @@ async function computeSearchForQuery(query) {
         }
     }
 
+    if (!isCurrentGeneration(generation)) return;
     state.searchCache[query] = results;
 }
 
@@ -265,6 +278,9 @@ export async function performSearch(query) {
     if (!state.pdfDoc || !query) return;
     state.allKeywordMode = false;
 
+    const generation = state.docGeneration;
+    const token = beginSearch();
+
     let canonicalQuery = query;
     if (state.searchCache[query] === undefined) {
         const lower = query.toLowerCase();
@@ -273,7 +289,8 @@ export async function performSearch(query) {
     }
 
     if (state.searchCache[canonicalQuery] !== undefined) {
-        state.searchResults = state.searchCache[canonicalQuery];
+        // Copy so appendOcrResults cannot mutate the shared cache array.
+        state.searchResults = [...state.searchCache[canonicalQuery]];
         appendOcrResults(canonicalQuery);
         buildSearchResultsByPage();
         state.activeKeyword = canonicalQuery;
@@ -288,7 +305,9 @@ export async function performSearch(query) {
     state.searchResults = [];
 
     await computeSearchForQuery(canonicalQuery);
-    state.searchResults = state.searchCache[canonicalQuery] || [];
+    if (!isCurrentGeneration(generation) || !isCurrentSearch(token)) return;
+
+    state.searchResults = [...(state.searchCache[canonicalQuery] || [])];
     appendOcrResults(canonicalQuery);
     buildSearchResultsByPage();
 
@@ -328,7 +347,7 @@ export function cycleSearch(query) {
     if (state.searchCache[query] !== undefined) {
         const prevKeyword = state.activeKeyword;
 
-        state.searchResults = state.searchCache[query];
+        state.searchResults = [...state.searchCache[query]];
         appendOcrResults(query);
         buildSearchResultsByPage();
         state.activeKeyword = query;

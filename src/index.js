@@ -28,6 +28,7 @@ import { CustomDropdown } from './dropdown';
 
 
 register('setupVirtualPages', pdfRenderer.setupVirtualPages);
+register('teardownPdf', pdfRenderer.teardownPdf);
 register('isPageRendered', pdfRenderer.isPageRendered);
 register('renderPageNow', pdfRenderer.renderPageNow);
 register('setZoom', pdfRenderer.setZoom);

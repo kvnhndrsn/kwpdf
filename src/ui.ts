@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, beginDocGeneration, beginSearch } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import * as ocr from './ocr';
@@ -32,6 +32,8 @@ export function clearSearch() {
     state.searchResults = [];
     state.searchResultsByPage = {};
     state.currentMatchIndex = -1;
+    state.docSearchResults = [];
+    state.docCurrentMatchIndex = -1;
     state.inlineSearchActive = false;
     state.inlineSearchQuery = '';
     _savedKeyword = '';
@@ -39,6 +41,7 @@ export function clearSearch() {
     dom.navGroup.classList.remove('active');
     dom.navSep.style.display = 'none';
     fn.clearHighlights();
+    fn.renderDocHighlights();
     dom.keywordSelect.value = '';
     dom.keywordSelect.innerHTML = '';
     dom.matchInput.value = '';
@@ -106,7 +109,12 @@ export function clearAllResults() {
     state.totalCacheSize = 0;
     state.emit('stats-changed');
 
-    state.pdfDoc = null;
+    // Invalidate every in-flight document load, render, text extraction and
+    // search so nothing can repopulate state after this clear.
+    beginDocGeneration();
+    beginSearch();
+    fn.teardownPdf();
+
     state.currentDocUrl = '';
     state.currentDocType = 'pdf';
     state.currentScale = 1.0;

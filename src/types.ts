@@ -151,6 +151,11 @@ export interface State {
     pdfDoc: any;
     currentDocUrl: string;
     currentDocType: string;
+    /** Bumped whenever the active document changes; async work captures it and
+     *  discards its result if it no longer matches. */
+    docGeneration: number;
+    /** Bumped on every new search request so stale results cannot win. */
+    searchToken: number;
     totalPages: number;
     currentPage: number;
     currentScale: number;

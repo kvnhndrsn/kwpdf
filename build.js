@@ -38,7 +38,13 @@ const bundleHash = crypto.createHash('md5')
     .digest('hex')
     .slice(0, 8);
 
-fs.writeFileSync(path.join(dist, 'bundle.js'), bundleContent.replace(HASH_PLACEHOLDER, bundleHash));
+const replacedBundle = bundleContent.replaceAll(HASH_PLACEHOLDER, bundleHash);
+
+if (replacedBundle.includes(HASH_PLACEHOLDER)) {
+    throw new Error('Build failed: unresolved hash placeholder remains in bundle.js');
+}
+
+fs.writeFileSync(path.join(dist, 'bundle.js'), replacedBundle);
 
 function copy(src, dest) { fs.cpSync(path.join(__dirname, src), path.join(dist, dest), { recursive: true }); }
 

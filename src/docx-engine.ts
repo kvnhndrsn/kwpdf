@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, beginDocGeneration, isCurrentGeneration } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
@@ -101,9 +101,15 @@ export function loadDocxDoc(fileUrl, keyword = '') {
         return;
     }
 
+    const generation = beginDocGeneration();
+
     state.currentDocUrl = fileUrl;
     const cachedInfo = state.docContentCache[fileUrl];
     state.currentDocType = cachedInfo?.type || getDocTypeFromUrl(fileUrl);
+
+    // Release the previous PDF: keeping it alive would let in-flight render
+    // callbacks paint a PDF canvas into the DOCX page elements below.
+    fn.teardownPdf();
 
     dom.loader.style.display = 'flex';
     dom.loaderFilename.textContent = 'Loading document...';
@@ -122,8 +128,10 @@ export function loadDocxDoc(fileUrl, keyword = '') {
                 if (blobUrl) {
                     const response = await fetch(blobUrl);
                     const arrayBuffer = await response.arrayBuffer();
+                    if (!isCurrentGeneration(generation)) return;
                     const fileName = state.docDataCache[fileUrl]?.name || 'Document';
                     await fn.extractDocText(arrayBuffer, fileName, fileUrl, null);
+                    if (!isCurrentGeneration(generation)) return;
                     cached = state.docContentCache[fileUrl];
                 }
             }
@@ -134,6 +142,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
             dom.loaderStatus.textContent = 'Rendering...';
 
             renderDocContent(cached.html, cached.text);
+            if (!isCurrentGeneration(generation)) return;
             state.currentScale = 1.0;
             document.documentElement.style.setProperty('--docx-scale', '1');
             dom.loaderProgressFill.style.width = '100%';
@@ -145,6 +154,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
             dom.pageTotal.textContent = String(state.totalPages);
 
             startDocSearchComputation();
+            if (!isCurrentGeneration(generation)) return;
 
             if (!keyword) {
                 const counts = state.searchCache._docCounts;
@@ -157,6 +167,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
 
             if (keyword) cycleDocSearch(keyword);
         } catch (err) {
+            if (!isCurrentGeneration(generation)) return;
             dom.loaderFilename.textContent = 'Error loading document';
             dom.loaderStatus.textContent = err.message;
             dom.loaderProgressFill.style.width = '0%';
@@ -211,11 +222,13 @@ function startDocSearchComputation() {
     const results = [];
     let match;
 
-    while ((match = combinedRegex.exec(text)) !== null) {
-        const key = normalizeKeywordMatch(match, KEYWORDS);
-        if (!key) continue;
-        const page = state._docPageOffsets ? findPageForIndex(match.index, state._docPageOffsets) : 1;
-        results.push({ index: match.index, text: match[0], length: match[0].length, page, keyword: key });
+    if (combinedRegex) {
+        while ((match = combinedRegex.exec(text)) !== null) {
+            const key = normalizeKeywordMatch(match, KEYWORDS);
+            if (!key) continue;
+            const page = state._docPageOffsets ? findPageForIndex(match.index, state._docPageOffsets) : 1;
+            results.push({ index: match.index, text: match[0], length: match[0].length, page, keyword: key });
+        }
     }
 
     const counts = {};

@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { processTextContent, buildOffsetMap, findStartItem, findEndItem, computeMatchCoords } from '../pdf-search';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { processTextContent, buildOffsetMap, findStartItem, findEndItem, computeMatchCoords, precomputeAllSearches } from '../pdf-search';
+import { state } from '../state';
+import { setKeywords } from '../cross';
+import { clearKeywordRegexCache } from '../keyword-regex';
 
 describe('processTextContent', () => {
     it('handles empty items', () => {
@@ -173,5 +176,59 @@ describe('computeMatchCoords', () => {
         const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
         expect(coords.x).toBeCloseTo(50, 1);
         expect(coords.y).toBeCloseTo(800 - (100 + 10), 1);
+    });
+});
+
+describe('precomputeAllSearches', () => {
+    beforeEach(() => {
+        state.searchCache = {};
+        state.textPageCache = {};
+        state.totalPages = 1;
+        state.docGeneration = 0;
+        state.pdfDoc = null;
+        state.textPageCache[1] = {
+            text: 'hello world',
+            viewport: { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] },
+            items: [{ text: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }]
+        };
+    });
+
+    it('does not throw when the active keyword list is empty', async () => {
+        setKeywords([]);
+        clearKeywordRegexCache();
+        await expect(precomputeAllSearches()).resolves.not.toThrow();
+        expect(state.searchCache._deduplicated).toBe(true);
+    });
+
+    it('records matches for a populated keyword list', async () => {
+        setKeywords(['world']);
+        clearKeywordRegexCache();
+        await precomputeAllSearches();
+        expect(state.searchCache.world).toHaveLength(1);
+        expect(state.searchCache._deduplicated).toBe(true);
+    });
+
+    it('abandons precompute when the document changes mid-flight', async () => {
+        setKeywords(['world']);
+        clearKeywordRegexCache();
+
+        // Force the lazy item fetch so there is an await to race against.
+        state.textPageCache[1].items = null;
+        state.pdfDoc = {
+            getPage: async () => ({
+                getTextContent: async () => {
+                    // Simulate the user opening another document mid-extraction.
+                    state.docGeneration++;
+                    return { items: [{ str: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }] };
+                }
+            })
+        };
+
+        await precomputeAllSearches();
+
+        // The stale run must not mark the cache complete, otherwise the newly
+        // opened document would skip its own precompute.
+        expect(state.searchCache._deduplicated).toBeUndefined();
+        expect(state.searchCache.world).toBeUndefined();
     });
 });
