@@ -160,9 +160,25 @@ describe('computeMatchCoords', () => {
         const offsetMap = buildOffsetMap(textItems);
 
         const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
-        // raw (x, y) -> viewport (y, x); hello baseline raw (0, 100) -> (100, 0)
+        // raw (x, y) -> viewport (y, x). The run spans raw x[0,30] y[100,110],
+        // so its box is viewport x[100,110] y[0,30]: the long axis is vertical.
         expect(coords.x).toBeCloseTo(100, 1);
-        expect(coords.y).toBeCloseTo(-10, 1);
+        expect(coords.y).toBeCloseTo(0, 1);
+        expect(coords.width).toBeCloseTo(10, 1);
+        expect(coords.height).toBeCloseTo(30, 1);
+    });
+
+    it('does not collapse the box for a 180-degree rotated page', () => {
+        const textItems = [
+            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [-1, 0, 0, 1, 500, 0] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
+        // 180 flips the advance direction, so x must be measured from the far end.
+        expect(coords.width).toBeCloseTo(30, 1);
+        expect(coords.height).toBeCloseTo(10, 1);
     });
 
     it('honors a non-zero viewBox (cropBox) origin', () => {

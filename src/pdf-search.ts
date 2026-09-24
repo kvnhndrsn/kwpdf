@@ -1,7 +1,7 @@
 import { state, isCurrentGeneration, beginSearch, isCurrentSearch } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
-import { projectItem } from './pdf-coords';
+import { projectItemBox, boxesOverlap, unionBoxes } from './pdf-coords';
 import { fn, KEYWORDS } from './cross';
 
 state.searchResults = [];
@@ -70,7 +70,7 @@ export function findEndItem(endPos, startIdx, offsets, items) {
         if (endPos <= itemEnd) hi = mid;
         else lo = mid + 1;
     }
-    return { item: items[lo], charStart: offsets[lo] };
+    return { item: items[lo], charStart: offsets[lo], index: lo };
 }
 
 export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, offsetMap) {
@@ -83,22 +83,23 @@ export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, of
         ? (matchEnd - end.charStart) / end.item.text.length : 1;
 
     const transform = viewport && viewport.transform;
-    let sx, sy, endX, height;
+
     if (transform) {
-        const sp = projectItem(start.item, transform);
-        const ep = projectItem(end.item, transform);
-        sx = sp.x + startCharFrac * start.item.width * sp.dx;
-        sy = sp.top;
-        endX = ep.x + endCharFrac * end.item.width * ep.dx;
-        height = Math.max(start.item.height || 0, end.item.height || 0);
-    } else {
-        const offsetY = viewport.offsetY || 0;
-        sx = start.item.transform[4] + startCharFrac * start.item.width;
-        sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
-        endX = end.item.transform[4] + endCharFrac * end.item.width;
-        height = start.item.height;
+        const startBox = projectItemBox(start.item, transform, startCharFrac, 1);
+        if (start.index === end.index || !end.item) {
+            return startBox;
+        }
+        const endBox = projectItemBox(end.item, transform, 0, endCharFrac);
+        // A match continuing onto another line cannot be drawn as one box;
+        // highlight the first fragment rather than a box spanning both lines.
+        return boxesOverlap(startBox, endBox) ? unionBoxes(startBox, endBox) : startBox;
     }
 
+    const offsetY = viewport.offsetY || 0;
+    const sx = start.item.transform[4] + startCharFrac * start.item.width;
+    const sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
+    const endX = end.item.transform[4] + endCharFrac * end.item.width;
+    const height = start.item.height;
     const width = Math.max(endX - sx, 4);
     return { x: sx, y: sy, width, height };
 }

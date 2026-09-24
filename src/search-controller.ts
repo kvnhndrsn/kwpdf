@@ -1,5 +1,5 @@
 import type { PageCacheEntry, RawSearchResult, TextCoords, DocDataCacheEntry, PdfCacheEntry, DocxCacheEntry } from './types';
-import { projectItem } from './pdf-coords';
+import { projectItemBox, boxesOverlap, unionBoxes, type ProjectedBox } from './pdf-coords';
 
 const GS_CHUNK_SIZE = 20;
 
@@ -40,44 +40,70 @@ export function getTextCoords(
 
     const viewport = cached.viewport;
     const transform = viewport && viewport.transform;
+
+    if (transform) {
+        // Walk the items once, projecting each run that the range touches.
+        let charOffset = 0;
+        let box: ProjectedBox | null = null;
+        let found = false;
+
+        for (const item of cached.items) {
+            const itemStart = charOffset;
+            const itemEnd = charOffset + item.text.length;
+            charOffset = itemEnd;
+
+            if (endIndex <= itemStart) break;
+            if (startIndex >= itemEnd) continue;
+
+            const from = Math.max(0, (startIndex - itemStart) / item.text.length);
+            const to = Math.min(1, (endIndex - itemStart) / item.text.length);
+            if (to <= from) continue;
+
+            const itemBox = projectItemBox(item, transform, from, to);
+            box = box && boxesOverlap(box, itemBox) ? unionBoxes(box, itemBox) : (box ?? itemBox);
+            found = true;
+        }
+
+        if (!found || !box) return null;
+        return {
+            startX: box.x,
+            startY: box.y,
+            endX: box.x + box.width,
+            endY: box.y + box.height,
+            height: box.height
+        };
+    }
+
     let startY = 0, startX = 0, endY = 0, endX = 0, height = 0;
     let charOffset = 0;
+    let foundStart = false;
+    let foundEnd = false;
 
     for (const item of cached.items) {
         const itemStart = charOffset;
         const itemEnd = charOffset + item.text.length;
 
-        if (startIndex >= itemStart && startIndex < itemEnd) {
+        if (!foundStart && startIndex >= itemStart && startIndex < itemEnd) {
             const frac = (startIndex - itemStart) / item.text.length;
-            if (transform) {
-                const p = projectItem(item, transform);
-                startX = p.x + frac * item.width * p.dx;
-                startY = p.top;
-            } else {
-                startX = item.transform[4] + frac * item.width;
-                startY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
-            }
+            startX = item.transform[4] + frac * item.width;
+            startY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
             height = item.height;
+            foundStart = true;
         }
 
         if (endIndex > itemStart && endIndex <= itemEnd) {
             const frac = (endIndex - itemStart) / item.text.length;
-            if (transform) {
-                const p = projectItem(item, transform);
-                endX = p.x + frac * item.width * p.dx;
-                endY = p.top;
-            } else {
-                endX = item.transform[4] + frac * item.width;
-                endY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
-            }
+            endX = item.transform[4] + frac * item.width;
+            endY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
+            foundEnd = true;
             break;
         }
 
         charOffset = itemEnd;
     }
 
-    if (endX === 0) endX = startX + 50;
-    if (endY === 0) endY = startY;
+    if (!foundStart) return null;
+    if (!foundEnd) { endX = startX + 50; endY = startY; }
 
     return { startX, startY, endX, endY, height };
 }

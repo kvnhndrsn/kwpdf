@@ -128,9 +128,25 @@ describe('getTextCoords', () => {
         };
         const coords = getTextCoords(cached, 0, 1);
         expect(coords).not.toBeNull();
-        // raw (100, 200) -> viewport (200, 100)
+        // raw (x, y) -> viewport (y, x). Half the run is raw x[100,115], the
+        // glyph box is y[200,212], giving viewport x[200,212] y[100,115] —
+        // the box grows across X, not down Y.
         expect(coords.startX).toBeCloseTo(200, 1);
-        expect(coords.startY).toBeCloseTo(100 - 12, 1);
+        expect(coords.startY).toBeCloseTo(100, 1);
+        expect(coords.endX).toBeCloseTo(212, 1);
+        expect(coords.height).toBeCloseTo(15, 1);
+    });
+
+    it('does not treat a legitimate x=0 endpoint as "not found"', () => {
+        const cached = {
+            text: 'ab',
+            viewport: { width: 600, height: 800, transform: [0, 1, 1, 0, 0, 0] },
+            items: [{ text: 'ab', transform: [10, 0, 0, 10, 0, 200], width: 30, height: 12 }],
+        };
+        const coords = getTextCoords(cached, 0, 1);
+        expect(coords).not.toBeNull();
+        expect(coords.startX).toBeCloseTo(200, 1);
+        expect(coords.height).toBeCloseTo(15, 1);
     });
 });
 
