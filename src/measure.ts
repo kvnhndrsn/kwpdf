@@ -1166,11 +1166,49 @@ export function parseScaleString(str) {
     return null;
 }
 
+/**
+ * How much of the PDF we are willing to pull into memory just to look for a
+ * /Measure dict. Scale metadata lives in the early (catalog/page-tree) objects
+ * of a PDF, so a prefix is normally enough; `autoDetectScale` falls back to
+ * `detectScaleFromText` when nothing is found, and the scale stays
+ * user-overridable either way.
+ */
+const RAW_SCAN_LIMIT = 4 * 1024 * 1024;
+
 async function detectScaleFromRawPdf(fileUrl) {
     try {
         const resp = await fetch(fileUrl);
-        const buf = await resp.arrayBuffer();
-        const raw = new TextDecoder('latin1').decode(buf);
+        if (!resp.ok) return null;
+
+        // Stream a bounded prefix instead of fetch() -> arrayBuffer() ->
+        // latin1 decode of the entire file. For a 35 MB tender that was ~35 MB
+        // of bytes plus a ~35M-char JS string (70 MB+) allocated on every open,
+        // for a regex match that almost never hits.
+        let raw = '';
+        if (resp.body && typeof resp.body.getReader === 'function') {
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder('latin1');
+            let bytesRead = 0;
+            try {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    raw += decoder.decode(value, { stream: true });
+                    bytesRead += value.byteLength;
+                    if (bytesRead >= RAW_SCAN_LIMIT) {
+                        await reader.cancel();
+                        break;
+                    }
+                }
+                raw += decoder.decode();
+            } catch (e) {
+                await reader.cancel().catch(() => {});
+            }
+        } else {
+            // No streaming body (older engines): fall back to a bounded read.
+            const buf = await resp.arrayBuffer();
+            raw = new TextDecoder('latin1').decode(buf.slice(0, RAW_SCAN_LIMIT));
+        }
 
         if (!raw.includes('/Measure')) return null;
 

@@ -5,6 +5,9 @@ import { evictCaches } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
 import { processTextContent, processTextContentAsync } from './pdf-search';
 
+/** Pages extracted in parallel during load-time text extraction. */
+const EXTRACT_CONCURRENCY = 8;
+
 function getDocTypeFromUrl(url) {
     const dataCached = state.docDataCache[url];
     if (dataCached?.type) return dataCached.type;
@@ -106,40 +109,61 @@ function loadPDF(fileUrl, keyword = '') {
             if (!cached) {
                 dom.loaderFilename.textContent = 'Extracting text from loaded PDF...';
                 const docRef = doc;
-                const extractPromises = [];
-                for (let p = 1; p <= state.totalPages; p++) {
-                    extractPromises.push(
-                        docRef.getPage(p).then(page =>
-                            page.getTextContent().then(content => ({
-                                pageNum: p,
-                                content,
-                                viewport: page.getViewport({ scale: 1.0 })
-                            })).catch(() => ({ pageNum: p, content: null, viewport: null }))
-                        ).catch(() => ({ pageNum: p, content: null, viewport: null }))
-                    );
-                }
-                const allResults = await Promise.all(extractPromises);
-                if (!isCurrentGeneration(generation)) return;
+                // Bounded concurrency, processing each page as it lands:
+                // fanning out all N getPage+getTextContent pairs at once (one
+                // Promise.all over the whole document) holds every page's parse
+                // state, decoded streams and raw TextContent live simultaneously,
+                // which is what pushes large tenders into worker-termination / OOM
+                // territory. Here only EXTRACT_CONCURRENCY raw pages are ever in
+                // flight; each is converted to its compact text/items form before
+                // the next is requested, so the raw payload becomes garbage
+                // immediately instead of being pinned until every page is done.
+                const pageTextData = new Array(state.totalPages);
+                let nextPage = 1;
+                const workers = Array.from(
+                    { length: Math.min(EXTRACT_CONCURRENCY, state.totalPages) },
+                    async () => {
+                        while (nextPage <= state.totalPages) {
+                            if (!isCurrentGeneration(generation)) return;
+                            const p = nextPage++;
+                            const pageNum = p;
+                            let slot: any;
+                            try {
+                                const page = await docRef.getPage(pageNum);
+                                const viewport = page.getViewport({ scale: 1.0 });
+                                let content = null;
+                                try {
+                                    content = await page.getTextContent();
+                                } catch (e) {
+                                    content = null;
+                                }
 
-                const textPromises = allResults.map(async ({ pageNum, content, viewport }) => {
-                    if (!content) {
-                        return { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                                if (!content) {
+                                    slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                                } else {
+                                    const { text, items } = await processTextContentAsync(content);
+                                    content = null;
+                                    slot = {
+                                        text,
+                                        viewport: {
+                                            width: viewport.width,
+                                            height: viewport.height,
+                                            offsetX: viewport.offsetX,
+                                            offsetY: viewport.offsetY,
+                                            transform: viewport.transform,
+                                            rotation: viewport.rotation
+                                        },
+                                        items
+                                    };
+                                }
+                            } catch (e) {
+                                slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                            }
+                            pageTextData[pageNum - 1] = slot;
+                        }
                     }
-                    const { text, items } = await processTextContentAsync(content);
-                    return {
-                        text,
-                        viewport: {
-                            width: viewport.width,
-                            height: viewport.height,
-                            offsetX: viewport.offsetX,
-                            offsetY: viewport.offsetY,
-                            transform: viewport.transform,
-                            rotation: viewport.rotation
-                        },
-                        items
-                    };
-                });
-                const pageTextData = await Promise.all(textPromises);
+                );
+                await Promise.all(workers);
                 if (!isCurrentGeneration(generation)) return;
                 dom.loaderProgressFill.style.width = '80%';
                 const fileName = state.docDataCache[fileUrl]?.name || 'Document';

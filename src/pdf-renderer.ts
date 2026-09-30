@@ -2,6 +2,12 @@ import { state, isCurrentGeneration } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
+import { fitScaleForPixels } from './canvas-budget';
+import {
+    getRawTextContent,
+    putRawTextContent,
+    clearRawTextContent,
+} from './raw-text-store';
 import { TextLayer } from 'pdfjs-dist';
 
 function scheduleIdle(fn, timeout = 300) {
@@ -209,6 +215,23 @@ function getViewportRange() {
 
 // ── cancel helpers ──
 
+/**
+ * True when a page still needs a raster pass.
+ *
+ * The scale check alone is not enough: a page whose render bailed before its
+ * canvas was attached has no `renderedScales` entry, and since the viewport
+ * range helper files visible pages under `visible` (never `near`), nothing else
+ * would ever come back for it. Checking for a canvas in the DOM makes an
+ * unpainted page self-healing on the next scroll/zoom refresh.
+ */
+function pageNeedsRender(pageNum: number): boolean {
+    if (state.renderTasks.has(pageNum)) return false;
+    const el = document.getElementById('page-' + pageNum);
+    if (!el) return false;
+    if (!el.querySelector('canvas')) return true;
+    return (state.renderedScales[pageNum] || 0) < state.currentScale;
+}
+
 function cancelNonVisibleRenders(visibleSet) {
     for (const [pn, t] of state.renderTasks) {
         if (!visibleSet.has(pn)) {
@@ -262,7 +285,7 @@ async function refreshVisiblePages() {
     if (gen !== renderGen) return;
 
     // Full-res visible pages with limited concurrency, center-first
-    const toRender = visible.filter(p => (state.renderedScales[p.pn] || 0) < state.currentScale);
+    const toRender = visible.filter(p => pageNeedsRender(p.pn));
     if (toRender.length) {
         await promiseMapConcurrent(toRender, p => renderPageNow(p.pn).catch(() => {}), Math.min(2, MAX_CONCURRENT_RENDERS));
     }
@@ -283,7 +306,6 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
     const renderScale = forceScale || state.currentScale;
     const dprCaps = { quality: 99, medium: 1.5, fast: 1.0 };
     const dpr = Math.min(window.devicePixelRatio || 1, dprCaps[state.renderQuality] || 99);
-    const effectiveScale = renderScale * dpr;
 
     if ((state.renderedScales[pageNum] || 0) >= renderScale) return;
     if (!state.pdfDoc) return;
@@ -292,20 +314,29 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
     const generation = state.docGeneration;
     const token = {};
     renderTokens.set(pageNum, token);
-    state.renderTasks.set(pageNum, null);
 
     try {
         const page = await state.pdfDoc.getPage(pageNum);
         if (!isCurrentGeneration(generation)) return;
         if (renderTokens.get(pageNum) !== token) return;
-        if (!state.renderTasks.has(pageNum)) return;
 
+        // Claim the render slot only now that getPage has resolved. Registering
+        // a null placeholder before the await left an entry that
+        // cancelNonVisibleRenders() deleted, which made the old
+        // `!state.renderTasks.has(pageNum)` guard abort this render with no
+        // error and no retry. renderTokens is the real concurrency guard.
+        if (state.renderTasks.has(pageNum)) return;
+        state.renderTasks.set(pageNum, null);
+
+        const vp1 = page.getViewport({ scale: 1.0 });
+        // pdf.js no longer clamps canvas size, so do it here: a page too big to
+        // rasterise silently yields an unpainted opaque-black canvas.
+        const effectiveScale = fitScaleForPixels(vp1.width, vp1.height, renderScale * dpr);
         const viewport = page.getViewport({ scale: effectiveScale });
 
         const el = document.getElementById('page-' + pageNum);
         if (!el) return;
 
-        const vp1 = page.getViewport({ scale: 1.0 });
         const displayWidth = vp1.width * state.currentScale;
         const displayHeight = vp1.height * state.currentScale;
 
@@ -324,6 +355,19 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         const ctx = getCanvasContext(canvas);
         canvas.width = viewport.width;
         canvas.height = viewport.height;
+
+        // A 0-sized canvas can't be rendered into and is invisible-but-present;
+        // an unpainted alpha:false canvas is opaque black. Never let either ship.
+        if (!canvas.width || !canvas.height) {
+            el.innerHTML = '<div class="page-error" style="padding:20px;text-align:center;color:var(--grey-500)">Page too large to display</div>';
+            return;
+        }
+        // pdf.js primes the page itself (beginDrawing fills #fff), so this is
+        // belt-and-braces: a render that resolves without painting shows white
+        // instead of a black rectangle.
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         canvas.style.width = displayWidth + 'px';
         canvas.style.height = displayHeight + 'px';
         canvas.dataset.scale = String(renderScale);
@@ -371,9 +415,13 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
                         rotation: vp1.rotation
                     },
                     items: processed.items,
-                    raw: textContent,
                 };
                 state.pageHeights[pageNum] = vp1.height;
+                // Raw TextContent goes to a bounded module-local store, never
+                // into docTextCache/textPageCache: those entries are shared by
+                // reference and _size is computed before `raw` exists, so
+                // evictCaches() could never reclaim it.
+                putRawTextContent(pageNum, textContent);
 
                 const pe = document.getElementById('page-' + pageNum);
                 if (pe && pe.isConnected && pe.querySelector('canvas')) {
@@ -428,14 +476,14 @@ function buildTextLayer(el, pageNum) {
     requestIdleOrTimeout(async () => {
         if (!el.isConnected) return;
         if (!isCurrentGeneration(generation)) return;
-        let raw = cached.raw;
+        let raw = getRawTextContent(pageNum);
         try {
             const page = await state.pdfDoc.getPage(pageNum);
             if (!isCurrentGeneration(generation)) return;
             if (!raw) {
                 raw = await page.getTextContent();
                 if (!isCurrentGeneration(generation)) return;
-                cached.raw = raw;
+                putRawTextContent(pageNum, raw);
             }
             if (textLayers.has(pageNum)) return;
             if (!el.isConnected || !el.querySelector('canvas')) return;
@@ -481,6 +529,7 @@ function teardownTextLayers() {
         try { ref.layer.cancel(); } catch (e) {}
     }
     textLayers.clear();
+    clearRawTextContent();
 }
 
 async function updateTextLayersAtScale(scale) {
@@ -506,8 +555,7 @@ function prerenderNearPages() {
     const pages: number[] = [];
     for (const pn of ranges.near) {
         const pageNum = pn as number;
-        if ((state.renderedScales[pageNum] || 0) >= state.currentScale) continue;
-        if (state.renderTasks.has(pageNum)) continue;
+        if (!pageNeedsRender(pageNum)) continue;
         pages.push(pageNum);
     }
     if (pages.length === 0) return;
@@ -642,7 +690,7 @@ export function startPrerender() {
     if (_rendering) return;
 
     const pagesWithMatches = [...new Set(state.searchResults.map(r => r.page))];
-    const toRender = pagesWithMatches.filter(pn => (state.renderedScales[pn] || 0) < state.currentScale);
+    const toRender = pagesWithMatches.filter(pn => pageNeedsRender(pn));
     if (toRender.length === 0) return;
 
     scheduleIdle(() => {

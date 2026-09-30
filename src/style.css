@@ -952,6 +952,15 @@ input, select, button, textarea {
 }
 .pdf-page canvas { display: block; transition: opacity 0.15s ease-in; }
 
+/*
+ * pdf.js's TextLayer measures text metrics on a 300x150 canvas it appends to
+ * <body> with class "hiddenCanvasElement". Its own stylesheet hides it
+ * (pdf_viewer.css: .hiddenCanvasElement{display:none}); we don't import that
+ * sheet, so without this rule an opaque-black (alpha:false) canvas is stretched
+ * by the flex <body> right across the viewer.
+ */
+.hiddenCanvasElement { position: absolute; top: 0; left: 0; width: 0; height: 0; display: none; }
+
 .docx-wrapper {
     margin: 0 auto; max-width: 100%;
     width: calc(var(--docx-scale, 1.0) * 800px);
