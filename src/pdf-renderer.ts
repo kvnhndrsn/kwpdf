@@ -618,7 +618,6 @@ export function setZoom(newScale, force = false) {
         }
     }
 
-    const oldScale = state.currentScale;
     state.currentScale = clampedScale;
     fn.updateZoomDisplay();
     document.documentElement.style.setProperty('--pdf-scale', String(clampedScale));
@@ -626,16 +625,16 @@ export function setZoom(newScale, force = false) {
     // Re-layout any existing selection text layers to the new scale immediately
     updateTextLayersAtScale(clampedScale).catch(() => {});
 
-    const scaleRatio = clampedScale / oldScale;
-
-    // CSS-resize all existing canvases for instant visual feedback
-    for (let i = 1; i <= state.totalPages; i++) {
-        const el = document.getElementById('page-' + i);
+    // CSS-resize existing canvases for instant visual feedback. Only rendered
+    // pages can own a canvas, so iterating totalPages spent two DOM queries per
+    // page (2,000 at the 1,000-page cap) on every single zoom step.
+    for (const pageNum of state.renderedPages) {
+        const el = document.getElementById('page-' + pageNum);
         if (!el) continue;
         const canvas = el.querySelector('canvas');
         if (!canvas) continue;
-        const baseH = state.pageHeights[i] || 800;
-        const cached = state.textPageCache[i];
+        const baseH = state.pageHeights[pageNum] || 800;
+        const cached = state.textPageCache[pageNum];
         const baseW = cached ? cached.viewport.width : 600;
         canvas.style.width = (baseW * clampedScale) + 'px';
         canvas.style.height = (baseH * clampedScale) + 'px';
@@ -644,7 +643,6 @@ export function setZoom(newScale, force = false) {
     cancelAllRenders();
 
     if (state.searchResults.length > 0) fn.repositionHighlights();
-    state.emit('heatmaps-changed');
     requestAnimationFrame(() => fn.refreshAllMeasurements());
 
     requestAnimationFrame(() => {

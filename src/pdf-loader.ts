@@ -217,7 +217,6 @@ function loadPDF(fileUrl, keyword = '') {
             dom.pageInput.max = String(state.totalPages);
             dom.pageTotal.textContent = String(state.totalPages);
 
-            state.emit('heatmaps-changed');
             fn.refreshAllMeasurements();
 
             state.emit('results-changed');

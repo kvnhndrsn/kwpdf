@@ -45,7 +45,6 @@ register('renderAllHighlights', pdfSearch.renderAllHighlights);
 register('renderHighlightsForPage', pdfSearch.renderHighlightsForPage);
 register('updateCurrentMatch', pdfSearch.updateCurrentMatch);
 register('repositionHighlights', pdfSearch.repositionHighlights);
-register('renderPageHeatmaps', pdfSearch.renderPageHeatmaps);
 
 register('loadDocxDoc', docxEngine.loadDocxDoc);
 register('performDocSearch', docxEngine.performDocSearch);
@@ -64,6 +63,8 @@ register('renderPlaceholderCard', rendering.renderPlaceholderCard);
 register('renderCard', rendering.renderCard);
 register('renderNoMatchCard', rendering.renderNoMatchCard);
 register('renderResultsArea', rendering.renderResultsArea);
+register('beginResultsBatch', rendering.beginResultsBatch);
+register('endResultsBatch', rendering.endResultsBatch);
 register('updateStats', rendering.updateStats);
 register('updateSidebarBadge', rendering.updateSidebarBadge);
 register('updateKeywordGrid', rendering.updateKeywordGrid);
@@ -95,6 +96,7 @@ register('toggleOcrForFile', ocr.toggleOcrForFile);
 register('isOcrEnabled', ocr.isOcrEnabled);
 register('getOcrState', ocr.getOcrState);
 register('getOcrMatchesForKeyword', ocr.getOcrMatchesForKeyword);
+register('resetOcrState', ocr.resetOcrState);
 
 register('setScale', measure.setScale);
 register('getActiveTool', measure.getActiveTool);
@@ -126,7 +128,6 @@ rendering.setCallbacks({
 state.on('results-changed', fn.renderResultsArea);
 state.on('stats-changed', fn.updateStats);
 state.on('badge-changed', fn.updateSidebarBadge);
-state.on('heatmaps-changed', fn.renderPageHeatmaps);
 state.on('keywords-changed', fn.populateKeywordSelect);
 
 

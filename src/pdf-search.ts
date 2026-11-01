@@ -269,7 +269,6 @@ export function cycleAllKeywords() {
     renderAllHighlights();
     state.emit('keywords-changed');
     state.emit('badge-changed');
-    state.emit('heatmaps-changed');
     state.emit('results-changed');
     fn.startPrerender();
     fn.goToMatch(state.currentMatchIndex);
@@ -326,7 +325,6 @@ function showSearchResults() {
         renderAllHighlights();
         state.emit('keywords-changed');
         state.emit('badge-changed');
-        state.emit('heatmaps-changed');
         fn.startPrerender();
         fn.goToMatch(0);
     } else {
@@ -337,7 +335,6 @@ function showSearchResults() {
         state.currentMatchIndex = -1;
         state.emit('badge-changed');
         state.emit('keywords-changed');
-        state.emit('heatmaps-changed');
     }
 }
 
@@ -364,7 +361,6 @@ export function cycleSearch(query) {
             dom.matchInput.max = String(state.searchResults.length);
             dom.matchInput.value = String(state.currentMatchIndex + 1);
             state.emit('keywords-changed');
-            state.emit('heatmaps-changed');
             renderAllHighlights();
             fn.goToMatch(state.currentMatchIndex);
         } else {
@@ -459,5 +455,3 @@ function buildSearchResultsByPage() {
     });
     state.searchResultsByPage = byPage;
 }
-
-export function renderPageHeatmaps() {}

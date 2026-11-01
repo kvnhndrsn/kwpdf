@@ -340,7 +340,43 @@ function renderTree(node, path = '') {
     return ul;
 }
 
+/**
+ * Bulk ingestion (folder / zip scan) rebuilds the tree once per file, which is
+ * O(n^2) node creation for an n-file folder. While a batch is open the tree is
+ * rebuilt at most once per throttle window; the final state is always flushed
+ * by endResultsBatch().
+ */
+let _resultsBatchDepth = 0;
+let _resultsDirty = false;
+let _resultsLastRenderAt = 0;
+const RESULTS_RENDER_THROTTLE_MS = 250;
+
+export function beginResultsBatch(): void {
+    _resultsBatchDepth++;
+}
+
+export function endResultsBatch(): void {
+    if (_resultsBatchDepth > 0) _resultsBatchDepth--;
+    if (_resultsBatchDepth === 0 && _resultsDirty) flushResultsRender();
+}
+
+function flushResultsRender(): void {
+    if (!_resultsDirty) return;
+    _resultsDirty = false;
+    _resultsLastRenderAt = Date.now();
+    renderResultsAreaNow();
+}
+
 export function renderResultsArea() {
+    if (_resultsBatchDepth > 0) {
+        _resultsDirty = true;
+        if (Date.now() - _resultsLastRenderAt >= RESULTS_RENDER_THROTTLE_MS) flushResultsRender();
+        return;
+    }
+    renderResultsAreaNow();
+}
+
+function renderResultsAreaNow(): void {
     dom.resultsArea.innerHTML = '';
     dom.resultsArea.className = 'results-area';
 
@@ -359,8 +395,6 @@ export function renderResultsArea() {
 }
 
 export function updateStats() {
-    if (state._verboseRAF) return;
-
     if (state.globalSearchQuery) {
         const total = Object.values(state.globalSearchResults).reduce((a, b) => a + b, 0);
         const files = Object.keys(state.globalSearchResults).length;

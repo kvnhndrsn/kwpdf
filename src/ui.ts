@@ -51,7 +51,6 @@ export function clearSearch() {
     }
     updateInlineSearchClearBtn();
     state.emit('badge-changed');
-    state.emit('heatmaps-changed');
     updateToolbarState();
 }
 
@@ -86,6 +85,7 @@ export function clearAllResults() {
     const viewerDropMsg = document.getElementById('viewerDropMsg');
     if (viewerDropMsg) viewerDropMsg.style.display = 'block';
     dom.statusBar.textContent = '';
+    dom.progressBar.style.width = '0%';
 
     if (state.objectUrls) {
         state.objectUrls.forEach(url => {
@@ -105,6 +105,12 @@ export function clearAllResults() {
     state.objectUrls = [];
     state.totalMatchesFound = 0;
     state.totalDocsFound = 0;
+
+    // Must run while docDataCache/currentDocUrl still identify the open doc:
+    // measurements are keyed by fullPath, which getDocKey derives from it.
+    fn.clearMeasurements();
+    fn.resetOcrState();
+
     state.docDataCache = {};
     state.totalCacheSize = 0;
     state.emit('stats-changed');
@@ -161,8 +167,6 @@ function initSearchOverlay() {
     });
     searchOverlayInput.addEventListener('input', () => performCustomSearch(searchOverlayInput.value));
 }
-
-function updateHeatmap() {}
 
 function updateInlineSearchClearBtn() {
     if (!dom.inlineSearchInput || !dom.inlineSearchClear) return;
@@ -643,7 +647,6 @@ export function updateToolbarState() {
 
     const hasResults = (state.currentDocType === 'pdf' ? state.searchResults.length : state.docSearchResults.length) > 0;
 
-    if (dom.searchToggleBtn) (dom.searchToggleBtn as HTMLButtonElement).disabled = !hasDoc;
     if (dom.inlineSearchInput) (dom.inlineSearchInput as HTMLInputElement).disabled = !hasDoc;
     if (dom.inlineSearchClear) (dom.inlineSearchClear as HTMLButtonElement).disabled = !hasDoc;
     (dom.keywordSelect as HTMLSelectElement).disabled = !hasDoc || dom.keywordSelect.options.length === 0;
@@ -667,7 +670,6 @@ export function goToMatch(index) {
     state.currentMatchIndex = wrapIndex(index, state.searchResults.length);
     dom.matchInput.value = String(state.currentMatchIndex + 1);
     state.emit('badge-changed');
-    updateHeatmap();
 
     const result = state.searchResults[state.currentMatchIndex];
 
@@ -678,7 +680,6 @@ export function goToMatch(index) {
             dom.viewerScroll.scrollTo({ top: Math.max(0, targetTop), behavior: state.smoothScrollEnabled ? 'smooth' : 'auto' });
         }
         fn.updateCurrentMatch(prevIndex, state.currentMatchIndex);
-        updateHeatmap();
     });
 
     fn.startPrerender();
@@ -733,14 +734,10 @@ export function setupEventListeners() {
     dom.zoomActualBtn?.addEventListener('click', zoomActual);
     dom.prevPageBtn?.addEventListener('click', prevPage);
     dom.nextPageBtn?.addEventListener('click', nextPage);
-    dom.searchToggleBtn?.addEventListener('click', showSearchOverlay);
     dom.findPrevBtn?.addEventListener('click', findPrev);
     dom.findNextBtn?.addEventListener('click', findNext);
     dom.clearSearchBtn?.addEventListener('click', clearSearch);
     dom.clearAllBtn?.addEventListener('click', clearAllResults);
-    dom.kwManageBtn?.addEventListener('click', (e) => {
-        keywords.toggleKeywordManager(e);
-    });
     dom.settingsBtn?.addEventListener('click', toggleSettings);
     dom.mobileToggleBtn?.addEventListener('click', toggleMobileSidebar);
 
@@ -967,7 +964,6 @@ export function setupEventListeners() {
 
             if (!detectedPage && scrollTop + containerHeight >= scrollHeight - 50) detectedPage = state.totalPages;
             if (detectedPage && detectedPage !== state.currentPage) { state.currentPage = detectedPage; updatePageInfo(); }
-            if (state.searchResults.length > 0) updateHeatmap();
         });
     });
 

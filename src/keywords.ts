@@ -246,7 +246,7 @@ function closeKeywordMenuOnClickOutside(e) {
         document.removeEventListener('click', closeKeywordMenuOnClickOutside);
         return;
     }
-    if (!menu.contains(e.target) && e.target !== dom.kwManageBtn) {
+    if (!menu.contains(e.target)) {
         menu.classList.remove('visible');
         document.removeEventListener('click', closeKeywordMenuOnClickOutside);
         if (typeof (menu as any)._trapCleanup === 'function') {

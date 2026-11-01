@@ -68,7 +68,6 @@ export const state: State = {
     _gsPos: -1,
 
     allKeywordMode: false,
-    _verboseRAF: null,
 
     MAX_FILE_SIZE: 500 * 1024 * 1024,
     MAX_DOC_FILE_SIZE: 100 * 1024 * 1024,

@@ -211,7 +211,6 @@ export interface State {
     _gsPos: number;
 
     allKeywordMode: boolean;
-    _verboseRAF: number | null;
     _gsPageCacheReady?: boolean;
     _docPageHtmls?: string[];
     _docPageOffsets?: number[];

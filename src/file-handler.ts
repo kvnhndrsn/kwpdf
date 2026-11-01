@@ -41,9 +41,6 @@ function startVerboseStatus(fileName) {
     dom.statusBar.textContent = 'Scanning ' + shortName + '..';
 }
 
-function stopVerboseStatus() {}
-
-
 function updateProgressMainThread() {
     state.processed++;
     const pct = state.totalFiles > 0 ? Math.round((state.processed / state.totalFiles) * 100) : 0;
@@ -67,16 +64,29 @@ export function evictCaches() {
 
     allEntries.sort((a, b) => a.entry._lastAccess - b.entry._lastAccess);
 
+    // Counts and the running total are tracked as we evict. Recomputing them
+    // inside the loop made eviction O(n^2) in cache size, and evictCaches runs
+    // after every insert.
+    let pdfCount = Object.keys(state.docTextCache).length;
+    let docxCount = Object.keys(state.docContentCache).length;
+    let totalSize = state.totalCacheSize;
+
     for (const { key, entry, cacheType } of allEntries) {
-        const pdfCount = Object.keys(state.docTextCache).length;
-        const docxCount = Object.keys(state.docContentCache).length;
         const countOk = pdfCount <= state.MAX_CACHE_COUNT_PER_TYPE && docxCount <= state.MAX_CACHE_COUNT_PER_TYPE;
-        const sizeOk = state.totalCacheSize <= state.MAX_CACHE_SIZE_TOTAL;
+        const sizeOk = totalSize <= state.MAX_CACHE_SIZE_TOTAL;
         if (countOk && sizeOk) break;
 
-        if (cacheType === 'pdf') delete state.docTextCache[key];
-        if (cacheType === 'docx') delete state.docContentCache[key];
-        state.totalCacheSize -= (entry._size || 0);
+        if (cacheType === 'pdf' && key in state.docTextCache) {
+            delete state.docTextCache[key];
+            pdfCount--;
+        }
+        if (cacheType === 'docx' && key in state.docContentCache) {
+            delete state.docContentCache[key];
+            docxCount--;
+        }
+        const size = entry._size || 0;
+        state.totalCacheSize -= size;
+        totalSize -= size;
     }
 }
 
@@ -253,48 +263,55 @@ async function processFiles(files) {
     state.totalFiles = Math.min(files.length, state.MAX_TOTAL_FILES);
     let failedCount = 0;
 
-    for (let i = 0; i < state.totalFiles; i++) {
-        const file = files[i];
-        const sizeLimit = getFileType(file.name) === 'pdf' ? state.MAX_FILE_SIZE : state.MAX_DOC_FILE_SIZE;
-        if (file.size > sizeLimit) {
-            showFileError(file.name, 'Skipped (' + (file.size / 1024 / 1024).toFixed(1) + ' MB exceeds limit)');
-            updateProgressMainThread();
-            state.emit('stats-changed');
-            continue;
-        }
-
-        const url = URL.createObjectURL(file);
-        state.objectUrls.push(url);
-
-        startVerboseStatus(file.name);
-
-        fn.renderPlaceholderCard(file.name, url, file);
-
-        let success = false;
-        try {
-            const arrayBuffer = file._cachedBuffer || await file.arrayBuffer();
-            const type = getFileType(file.name);
-
-            if (type === 'pdf') {
-                await extractPdfText(arrayBuffer, file.name, url, file);
-                success = !!state.docTextCache[url];
-            } else if (type === 'docx' || type === 'doc') {
-                await extractDocText(arrayBuffer, file.name, url, file);
-                success = !!state.docContentCache[url];
+    // Throttle sidebar tree rebuilds for the duration of the scan: one full
+    // rebuild per file is quadratic, and each file already renders its own
+    // card. endResultsBatch() flushes the final state.
+    fn.beginResultsBatch();
+    try {
+        for (let i = 0; i < state.totalFiles; i++) {
+            const file = files[i];
+            const sizeLimit = getFileType(file.name) === 'pdf' ? state.MAX_FILE_SIZE : state.MAX_DOC_FILE_SIZE;
+            if (file.size > sizeLimit) {
+                showFileError(file.name, 'Skipped (' + (file.size / 1024 / 1024).toFixed(1) + ' MB exceeds limit)');
+                updateProgressMainThread();
+                state.emit('stats-changed');
+                continue;
             }
-        } catch (err) {
-            showFileError(file.name, err.message || err);
-        } finally {
-            if (!success) {
-                const idx = state.objectUrls.indexOf(url);
-                if (idx !== -1) state.objectUrls.splice(idx, 1);
-                URL.revokeObjectURL(url);
-                failedCount++;
+
+            const url = URL.createObjectURL(file);
+            state.objectUrls.push(url);
+
+            startVerboseStatus(file.name);
+
+            fn.renderPlaceholderCard(file.name, url, file);
+
+            let success = false;
+            try {
+                const arrayBuffer = file._cachedBuffer || await file.arrayBuffer();
+                const type = getFileType(file.name);
+
+                if (type === 'pdf') {
+                    await extractPdfText(arrayBuffer, file.name, url, file);
+                    success = !!state.docTextCache[url];
+                } else if (type === 'docx' || type === 'doc') {
+                    await extractDocText(arrayBuffer, file.name, url, file);
+                    success = !!state.docContentCache[url];
+                }
+            } catch (err) {
+                showFileError(file.name, err.message || err);
+            } finally {
+                if (!success) {
+                    const idx = state.objectUrls.indexOf(url);
+                    if (idx !== -1) state.objectUrls.splice(idx, 1);
+                    URL.revokeObjectURL(url);
+                    failedCount++;
+                }
+                updateProgressMainThread();
+                state.emit('stats-changed');
             }
-            stopVerboseStatus();
-            updateProgressMainThread();
-            state.emit('stats-changed');
         }
+    } finally {
+        fn.endResultsBatch();
     }
 
     if (failedCount > 0) {

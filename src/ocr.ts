@@ -32,7 +32,15 @@ export function getOcrMatchesForKeyword(keyword, url) {
 }
 
 export function initOcr() {
-    ocrEnabled = true;
+    const stored = localStorage.getItem('pdf_ocr_enabled');
+    ocrEnabled = stored === null ? true : stored === 'true';
+}
+
+/** Drop every per-file OCR result. Used when all documents are cleared, so
+ *  results keyed by revoked object URLs cannot leak into a later session. */
+export function resetOcrState() {
+    ocrFileState.clear();
+    ocrTotalPages = 0;
 }
 
 export function toggleOcrGlobal() {
@@ -354,6 +362,11 @@ async function startOcrForFile(url) {
             }
         }
     }
+
+    // The file's OCR state was cleared while this run was in flight (e.g.
+    // "Clear all"): drop the result instead of resurrecting a finished entry
+    // and inflating the match totals for a document that no longer exists.
+    if (ocrFileState.get(url)?.status !== 'processing') return;
 
     const docData = state.docDataCache[url];
     if (docData) {
