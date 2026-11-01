@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(__dirname, 'dist');
@@ -13,8 +13,13 @@ fs.mkdirSync(dist, { recursive: true });
 
 let commitDate = '';
 try {
-    commitDate = execSync('git log -1 --format=%cd --date=short', { encoding: 'utf8', cwd: __dirname }).trim();
-} catch (e) { /* not a git repo or no git */ }
+    // execFile rather than exec: no shell is spawned, so a checkout path with
+    // spaces or shell metacharacters cannot break the build.
+    commitDate = execFileSync('git', ['log', '-1', '--format=%cd', '--date=short'], {
+        encoding: 'utf8',
+        cwd: __dirname,
+    }).trim();
+} catch (e) { /* not a git checkout (tarball / CI export) — the date is optional */ }
 
 const HASH_PLACEHOLDER = 'KWPBF_HASH_PLACEHOLDER_8c3a';
 
@@ -55,15 +60,20 @@ copy('icons', 'icons');
 copy('fonts', 'fonts');
 
 let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-html = html.replaceAll('dist/', '');
+// Rewrite asset URLs only. A blanket `dist/` removal also mangles unrelated
+// occurrences, such as a link or label that happens to contain that path.
+html = html.replace(/(\s(?:src|href)=")dist\//g, '$1');
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 
 let sw = fs.readFileSync(path.join(__dirname, 'service_worker.js'), 'utf8');
-sw = sw.replace('__CACHE_VERSION__', bundleHash);
+sw = sw.replaceAll('__CACHE_VERSION__', bundleHash);
+if (sw.includes('__CACHE_VERSION__')) {
+    throw new Error('Build failed: unresolved cache version placeholder remains in service_worker.js');
+}
 fs.writeFileSync(path.join(dist, 'service_worker.js'), sw);
 
 copy('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'pdf.worker.min.mjs');
 copy('src/doc_processor_worker.js', 'utils/doc_processor_worker.js');
 copy('src/ocr_worker.js', 'utils/ocr_worker.js');
 
-console.log('Build complete: dist/bundle.js + dist/pdf.worker.min.js [cache:' + bundleHash + ']');
+console.log('Build complete: dist/bundle.js + dist/pdf.worker.min.mjs [cache:' + bundleHash + ']');
