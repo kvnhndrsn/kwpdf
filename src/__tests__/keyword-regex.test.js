@@ -96,3 +96,32 @@ describe('normalizeKeywordMatch', () => {
         expect(normalizeKeywordMatch(['baz'], map)).toBe('baz');
     });
 });
+
+describe('normalizeKeywordMatch canonical cache', () => {
+    it('keeps the spelling of the keyword list it is given', () => {
+        expect(normalizeKeywordMatch(['foobar'], ['FooBar'])).toBe('FooBar');
+        expect(normalizeKeywordMatch(['foobar'], ['FOOBAR'])).toBe('FOOBAR');
+    });
+
+    it('prefers the first spelling when a list repeats a keyword', () => {
+        expect(normalizeKeywordMatch(['foo'], ['Foo', 'foo'])).toBe('Foo');
+    });
+
+    it('notices a list that grew in place', () => {
+        const keywords = ['Foo'];
+        expect(normalizeKeywordMatch(['foo'], keywords)).toBe('Foo');
+
+        keywords.push('Bar');
+
+        expect(normalizeKeywordMatch(['bar'], keywords)).toBe('Bar');
+    });
+
+    it('still resolves after the regex cache is cleared', () => {
+        const keywords = ['FooBar'];
+        expect(normalizeKeywordMatch(['foobar'], keywords)).toBe('FooBar');
+
+        clearKeywordRegexCache();
+
+        expect(normalizeKeywordMatch(['foobar'], keywords)).toBe('FooBar');
+    });
+});

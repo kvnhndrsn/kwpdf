@@ -238,3 +238,86 @@ describe('countMatchesInAllDocs', () => {
         expect(result.filesWithMatches).toBe(1);
     });
 });
+
+describe('searchTextPages query memo', () => {
+    function page(text) {
+        return { text, viewport: { width: 800, height: 600 }, items: null };
+    }
+
+    it('returns an equal but independent array for a repeated query', () => {
+        const cache = { 1: page('hello hello') };
+
+        const first = searchTextPages(cache, 1, 'hello');
+        const second = searchTextPages(cache, 1, 'hello');
+
+        expect(second).toEqual(first);
+        expect(second).not.toBe(first);
+    });
+
+    it('does not hand out the memoised array itself', () => {
+        const cache = { 1: page('hello hello') };
+
+        const first = searchTextPages(cache, 1, 'hello');
+        first.length = 0;
+
+        expect(searchTextPages(cache, 1, 'hello')).toHaveLength(2);
+    });
+
+    it('re-scans once the page cache gains a page', () => {
+        const cache = { 1: page('hello') };
+        expect(searchTextPages(cache, 1, 'hello')).toHaveLength(1);
+
+        cache[2] = page('hello again');
+        const after = searchTextPages(cache, 2, 'hello');
+
+        expect(after).toHaveLength(2);
+        expect(after[1].page).toBe(2);
+    });
+
+    it('keeps separate results for separate queries', () => {
+        const cache = { 1: page('hello world') };
+
+        expect(searchTextPages(cache, 1, 'hello')).toHaveLength(1);
+        expect(searchTextPages(cache, 1, 'world')).toHaveLength(1);
+        expect(searchTextPages(cache, 1, 'hello')[0].startIndex).toBe(0);
+    });
+});
+
+describe('getTextCoords item lookup', () => {
+    function item(text, x, width = 30) {
+        return { text, transform: [10, 0, 0, 10, x, 200], width, height: 12 };
+    }
+
+    function entry(items) {
+        return {
+            text: items.map(i => i.text).join(''),
+            viewport: { width: 800, height: 600, offsetY: 0 },
+            items,
+        };
+    }
+
+    it('spans a match that crosses two adjacent runs', () => {
+        const cached = entry([item('ab', 100), item('cd', 130)]);
+
+        const coords = getTextCoords(cached, 1, 3);
+
+        expect(coords).not.toBeNull();
+        // 'b' starts halfway through the first run, 'c' ends halfway through the second.
+        expect(coords.startX).toBeCloseTo(100 + 0.5 * 30, 5);
+        expect(coords.endX).toBeCloseTo(130 + 0.5 * 30, 5);
+    });
+
+    it('skips empty runs without losing the match', () => {
+        const cached = entry([item('ab', 100), item('', 0), item('cd', 130)]);
+
+        const coords = getTextCoords(cached, 2, 3);
+
+        expect(coords).not.toBeNull();
+        expect(coords.startX).toBeCloseTo(130, 5);
+    });
+
+    it('returns null when the range starts past the end of the text', () => {
+        const cached = entry([item('ab', 100)]);
+        expect(getTextCoords(cached, 2, 3)).toBeNull();
+    });
+});

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { getFileType, getFileIcon } from '../file-handler';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { getFileType, getFileIcon, evictCaches } from '../file-handler';
+import { state } from '../state';
 
 describe('getFileType', () => {
     it('identifies PDF files', () => {
@@ -54,5 +55,95 @@ describe('getFileIcon', () => {
         const icon = getFileIcon('test.txt');
         expect(icon).toContain('<svg');
         expect(icon).toContain('viewBox');
+    });
+});
+
+describe('evictCaches', () => {
+    const ORIGINAL = {
+        textCache: state.docTextCache,
+        contentCache: state.docContentCache,
+        totalCacheSize: state.totalCacheSize,
+        currentDocUrl: state.currentDocUrl,
+        maxCount: state.MAX_CACHE_COUNT_PER_TYPE,
+        maxSize: state.MAX_CACHE_SIZE_TOTAL,
+    };
+
+    function seed(count, size = 1024) {
+        state.docTextCache = {};
+        state.docContentCache = {};
+        state.totalCacheSize = 0;
+        state.currentDocUrl = '';
+
+        for (let i = 0; i < count; i++) {
+            state.docTextCache['doc' + i] = {
+                totalPages: 1,
+                pages: [],
+                fileName: 'doc' + i + '.pdf',
+                _lastAccess: i,
+                _size: size,
+            };
+            state.totalCacheSize += size;
+        }
+    }
+
+    beforeEach(() => {
+        state.MAX_CACHE_COUNT_PER_TYPE = 30;
+        state.MAX_CACHE_SIZE_TOTAL = 500 * 1024 * 1024;
+    });
+
+    afterEach(() => {
+        state.docTextCache = ORIGINAL.textCache;
+        state.docContentCache = ORIGINAL.contentCache;
+        state.totalCacheSize = ORIGINAL.totalCacheSize;
+        state.currentDocUrl = ORIGINAL.currentDocUrl;
+        state.MAX_CACHE_COUNT_PER_TYPE = ORIGINAL.maxCount;
+        state.MAX_CACHE_SIZE_TOTAL = ORIGINAL.maxSize;
+    });
+
+    it('evicts the least recently used entries back to the per-type cap', () => {
+        seed(100);
+
+        evictCaches();
+
+        expect(Object.keys(state.docTextCache)).toHaveLength(30);
+        // The 30 most recently used survive, the 70 oldest go.
+        expect(state.docTextCache['doc70']).toBeDefined();
+        expect(state.docTextCache['doc69']).toBeUndefined();
+        expect(state.totalCacheSize).toBe(30 * 1024);
+    });
+
+    it('never evicts the document that is currently open', () => {
+        seed(50);
+        // The oldest entry is the open one: it must survive even though it is
+        // the first candidate by last-access order.
+        state.currentDocUrl = 'doc0';
+
+        evictCaches();
+
+        expect(state.docTextCache['doc0']).toBeDefined();
+        expect(state.docTextCache['doc1']).toBeUndefined();
+        // Still counts toward the cap: 29 others plus the open document.
+        expect(Object.keys(state.docTextCache)).toHaveLength(30);
+    });
+
+    it('leaves the cache alone when both caps are satisfied', () => {
+        seed(10);
+
+        evictCaches();
+
+        expect(Object.keys(state.docTextCache)).toHaveLength(10);
+        expect(state.totalCacheSize).toBe(10 * 1024);
+    });
+
+    it('evicts on total size even when the count is under the cap', () => {
+        seed(5, 200 * 1024 * 1024);
+
+        evictCaches();
+
+        // 5 x 200MB is double the budget: the three oldest go before it fits.
+        expect(state.docTextCache['doc0']).toBeUndefined();
+        expect(state.docTextCache['doc2']).toBeUndefined();
+        expect(state.docTextCache['doc3']).toBeDefined();
+        expect(state.totalCacheSize).toBe(2 * 200 * 1024 * 1024);
     });
 });
