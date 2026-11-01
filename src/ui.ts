@@ -1,4 +1,4 @@
-import { state, beginDocGeneration, beginSearch } from './state';
+import { state, beginDocGeneration, beginSearch, resetLibraryState } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import * as ocr from './ocr';
@@ -111,34 +111,22 @@ export function clearAllResults() {
     fn.clearMeasurements();
     fn.resetOcrState();
 
-    state.docDataCache = {};
-    state.totalCacheSize = 0;
-    state.emit('stats-changed');
-
     // Invalidate every in-flight document load, render, text extraction and
     // search so nothing can repopulate state after this clear.
     beginDocGeneration();
     beginSearch();
+    // Drop queued worker jobs from the previous library, and reject anything
+    // still in flight, so no cancelled scan settles into the cleared state.
+    state.workerPool?.cancelStale?.(state.docGeneration);
     fn.teardownPdf();
 
-    state.currentDocUrl = '';
-    state.currentDocType = 'pdf';
-    state.currentScale = 1.0;
-    document.documentElement.style.setProperty('--pdf-scale', '1');
-    state.currentPage = 1;
-    state.totalPages = 0;
     dom.viewer.innerHTML = '';
-    state.renderedPages.clear();
-    state.renderedScales = {};
-    state.pageHeights = {};
-    state.searchCache = {};
     clearSearch();
-    state.textPageCache = {};
-    state._gsPageCacheReady = false;
-    state.docSearchResults = [];
-    state.docCurrentMatchIndex = -1;
-    state._docPageHtmls = null;
-    state._docPageOffsets = null;
+    // Document caches, totals and global search, then the open document's own
+    // state. One path, shared with the PDF and DOCX loaders.
+    resetLibraryState();
+    document.documentElement.style.setProperty('--pdf-scale', '1');
+    state.emit('stats-changed');
 }
 
 function initSearchOverlay() {

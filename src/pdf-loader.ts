@@ -1,4 +1,4 @@
-import { state, beginDocGeneration, isCurrentGeneration } from './state';
+import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } from './state';
 import * as dom from './dom';
 import { fn, pdfjsLib } from './cross';
 import { evictCaches } from './file-handler';
@@ -49,6 +49,9 @@ function loadPDF(fileUrl, keyword = '') {
 
     const generation = beginDocGeneration();
 
+    // Everything the previous document left behind: scale, page caches, search
+    // results, highlights and the DOCX page index.
+    resetDocumentState();
     state.currentDocUrl = fileUrl;
     state.currentDocType = 'pdf';
 
@@ -60,16 +63,8 @@ function loadPDF(fileUrl, keyword = '') {
     dom.loaderStatus.textContent = 'Initializing...';
     dom.loaderProgressFill.style.width = '10%';
     dom.viewer.innerHTML = '';
-    state.renderedPages.clear();
-    state.renderedScales = {};
-    state.pageHeights = {};
-    state.searchCache = {};
     fn.clearSearch();
-    state.currentScale = 1.0;
     document.documentElement.style.setProperty('--pdf-scale', '1');
-    state.currentPage = 1;
-    state.textPageCache = {};
-    state._gsPageCacheReady = false;
 
     (async () => {
         try {

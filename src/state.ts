@@ -107,6 +107,79 @@ export function isCurrentGeneration(generation: number): boolean {
     return state.docGeneration === generation;
 }
 
+/**
+ * Reset everything scoped to the open document: its identity, the viewport
+ * scale, the page/text caches and every search index derived from them.
+ *
+ * This used to be hand-copied into each loader, and the copies had already
+ * drifted: the PDF path never cleared `searchResultsByPage`, the DOCX page
+ * index or the active keyword, so state left over from the previous document
+ * could survive a switch. Runtime handles (`pdfDoc`, observers, render tasks)
+ * are released by teardownPdf(), and library-scoped caches and totals by
+ * resetLibraryState().
+ *
+ * Deliberately leaves `docGeneration` and `searchToken` alone: bumping them is
+ * what invalidates in-flight work, so resetting them would do the opposite of
+ * what this function is for.
+ */
+export function resetDocumentState(): void {
+    state.currentDocUrl = '';
+    state.currentDocType = 'pdf';
+    state.currentPage = 1;
+    state.totalPages = 0;
+    state.currentScale = 1.0;
+
+    state.pageHeights = {};
+    state.renderedPages.clear();
+    state.renderedScales = {};
+    state.textPageCache = {};
+
+    state.searchCache = {};
+    state.searchResults = [];
+    state.searchResultsByPage = {};
+    state.currentMatchIndex = -1;
+    state.activeKeyword = '';
+    state.allKeywordMode = false;
+    state.inlineSearchActive = false;
+    state.inlineSearchQuery = '';
+
+    state.docSearchResults = [];
+    state.docCurrentMatchIndex = -1;
+    state.docOriginalHtml = null;
+    state._docPageHtmls = null;
+    state._docPageOffsets = null;
+
+    state._gsPageCacheReady = false;
+    state.globalSearchActiveDoc = '';
+    state.globalSearchDocIndex = 0;
+}
+
+/**
+ * Reset every indexed document: the text/content caches, the object URLs, the
+ * running totals and the global-search results, then the open document itself.
+ * Callers are responsible for revoking object URLs and releasing measurements
+ * and OCR state first, while the old document is still identifiable.
+ */
+export function resetLibraryState(): void {
+    state.objectUrls = [];
+    state.docTextCache = {};
+    state.docContentCache = {};
+    state.docDataCache = {};
+    state.totalCacheSize = 0;
+
+    state.totalFiles = 0;
+    state.processed = 0;
+    state.totalMatchesFound = 0;
+    state.totalDocsFound = 0;
+
+    state.globalSearchQuery = '';
+    state.globalSearchResults = {};
+    state.globalSearchDocResults = [];
+    state._gsPos = -1;
+
+    resetDocumentState();
+}
+
 /** Claim a search request; later requests invalidate earlier ones. */
 export function beginSearch(): number {
     state.searchToken++;

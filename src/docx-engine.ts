@@ -1,4 +1,4 @@
-import { state, beginDocGeneration, isCurrentGeneration } from './state';
+import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
@@ -139,10 +139,15 @@ export function loadDocxDoc(fileUrl, keyword = '') {
 
     const generation = beginDocGeneration();
 
+    const cachedInfo = state.docContentCache[fileUrl];
+
+    // Previous document's scale, page caches, search results, highlights and
+    // PDF page index — the DOCX path used to leave most of it behind.
+    resetDocumentState();
+
     state.currentDocUrl = fileUrl;
     docQueryCache.clear();
     docHighlightedPages.clear();
-    const cachedInfo = state.docContentCache[fileUrl];
     state.currentDocType = cachedInfo?.type || getDocTypeFromUrl(fileUrl);
 
     // Release the previous PDF: keeping it alive would let in-flight render
@@ -155,7 +160,6 @@ export function loadDocxDoc(fileUrl, keyword = '') {
     dom.loaderProgressFill.style.width = '30%';
     dom.viewer.innerHTML = '';
     fn.clearSearch();
-    state.textPageCache = {};
 
     (async () => {
         try {
