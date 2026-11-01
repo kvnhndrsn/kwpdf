@@ -16,6 +16,7 @@ import { register, fn, setPdfjsLib, setJSZip, setMammoth } from './cross';
 
 import * as pdfRenderer from './pdf-renderer';
 import * as pdfSearch from './pdf-search';
+import * as pdfHighlights from './pdf-highlights';
 import * as docxEngine from './docx-engine';
 import * as pdfLoader from './pdf-loader';
 import * as fileHandler from './file-handler';
@@ -40,11 +41,11 @@ register('precomputeAllSearches', pdfSearch.precomputeAllSearches);
 register('performSearch', pdfSearch.performSearch);
 register('cycleSearch', pdfSearch.cycleSearch);
 register('cycleAllKeywords', pdfSearch.cycleAllKeywords);
-register('clearHighlights', pdfSearch.clearHighlights);
-register('renderAllHighlights', pdfSearch.renderAllHighlights);
-register('renderHighlightsForPage', pdfSearch.renderHighlightsForPage);
-register('updateCurrentMatch', pdfSearch.updateCurrentMatch);
-register('repositionHighlights', pdfSearch.repositionHighlights);
+register('clearHighlights', pdfHighlights.clearHighlights);
+register('renderAllHighlights', pdfHighlights.renderAllHighlights);
+register('renderHighlightsForPage', pdfHighlights.renderHighlightsForPage);
+register('updateCurrentMatch', pdfHighlights.updateCurrentMatch);
+register('repositionHighlights', pdfHighlights.repositionHighlights);
 
 register('loadDocxDoc', docxEngine.loadDocxDoc);
 register('performDocSearch', docxEngine.performDocSearch);

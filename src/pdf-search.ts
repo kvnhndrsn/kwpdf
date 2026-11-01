@@ -3,6 +3,7 @@ import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { projectItemBox, boxesOverlap, unionBoxes } from './pdf-coords';
 import { fn, KEYWORDS } from './cross';
+import { clearHighlights, renderAllHighlights } from './pdf-highlights';
 
 state.searchResults = [];
 state.currentMatchIndex = -1;
@@ -374,77 +375,6 @@ export function cycleSearch(query) {
     }
 
     performSearch(query);
-}
-
-export function renderAllHighlights() {
-    clearHighlights();
-
-    for (const pageNum in state.searchResultsByPage) {
-        const pageEl = document.getElementById('page-' + pageNum);
-        if (!pageEl) continue;
-        const fragment = document.createDocumentFragment();
-        state.searchResultsByPage[pageNum].forEach(({ result, globalIndex }) => {
-            if (result.x === null) return;
-            const mark = document.createElement('div');
-            mark.className = 'highlight-mark' + (globalIndex === state.currentMatchIndex ? ' current' : '');
-            mark.dataset.idx = String(globalIndex);
-            mark.style.left = (result.x * state.currentScale) + 'px';
-            mark.style.top = (result.y * state.currentScale) + 'px';
-            mark.style.width = (result.width * state.currentScale) + 'px';
-            mark.style.height = (result.height * state.currentScale) + 'px';
-            fragment.appendChild(mark);
-        });
-        pageEl.appendChild(fragment);
-    }
-}
-
-export function updateCurrentMatch(oldIndex, newIndex) {
-    if (oldIndex === newIndex) return;
-    const prev = document.querySelector(`.highlight-mark[data-idx="${oldIndex}"]`);
-    const next = document.querySelector(`.highlight-mark[data-idx="${newIndex}"]`);
-    if (prev) prev.classList.remove('current');
-    if (next) next.classList.add('current');
-}
-
-export function repositionHighlights() {
-    for (const mark of document.querySelectorAll('.highlight-mark')) {
-        const el = mark as HTMLElement;
-        const idx = parseInt(el.dataset.idx);
-        if (isNaN(idx)) continue;
-        const result = state.searchResults[idx];
-        if (!result || result.x === null) continue;
-        el.style.left = (result.x * state.currentScale) + 'px';
-        el.style.top = (result.y * state.currentScale) + 'px';
-        el.style.width = (result.width * state.currentScale) + 'px';
-        el.style.height = (result.height * state.currentScale) + 'px';
-    }
-}
-
-export function renderHighlightsForPage(pageNum) {
-    const pageEl = document.getElementById('page-' + pageNum);
-    if (!pageEl) return;
-    pageEl.querySelectorAll('.highlight-mark').forEach(el => el.remove());
-
-    const results = state.searchResultsByPage[pageNum];
-    if (!results) return;
-
-    const fragment = document.createDocumentFragment();
-    results.forEach(({ result, globalIndex }) => {
-        if (result.x === null) return;
-        const mark = document.createElement('div');
-        mark.className = 'highlight-mark' + (globalIndex === state.currentMatchIndex ? ' current' : '');
-        mark.dataset.idx = String(globalIndex);
-        mark.style.left = (result.x * state.currentScale) + 'px';
-        mark.style.top = (result.y * state.currentScale) + 'px';
-        mark.style.width = (result.width * state.currentScale) + 'px';
-        mark.style.height = (result.height * state.currentScale) + 'px';
-        fragment.appendChild(mark);
-    });
-    pageEl.appendChild(fragment);
-}
-
-export function clearHighlights() {
-    dom.viewer.querySelectorAll('.highlight-mark').forEach(el => el.remove());
 }
 
 function buildSearchResultsByPage() {
