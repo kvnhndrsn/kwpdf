@@ -21,7 +21,7 @@ export function getFileIcon(filename) {
     return '<svg width="18" height="18" viewBox="0 0 24 24" fill="#757575"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>';
 }
 
-import { WorkerPool } from './worker-pool';
+import { WorkerPool, CancelledTaskError } from './worker-pool';
 
 export function initWorkerPool() {
     if (!state.workerPool) {
@@ -547,6 +547,9 @@ export async function rescanAllDocuments() {
     state.totalFiles = state.objectUrls.length;
 
     initWorkerPool();
+    // Supersede anything queued by an earlier scan: those results describe a
+    // library the user has already replaced.
+    state.workerPool.cancelStale(state.docGeneration);
     const keywords = KEYWORDS || [];
     let failedCount = 0;
 
@@ -570,6 +573,9 @@ export async function rescanAllDocuments() {
                     fn.renderNoMatchCard(displayName, url);
                 }
             } catch (err) {
+                // A cancelled scan is not a failed document: stop without
+                // reporting an error for work the user abandoned.
+                if (err instanceof CancelledTaskError) return;
                 const name = pdfCached.fileName || url.split('/').pop();
                 showFileError(name, 'Rescan PDF worker error: ' + (err.message || err));
                 failedCount++;
@@ -592,6 +598,7 @@ export async function rescanAllDocuments() {
                         fn.renderNoMatchCard(displayName, url);
                     }
                 } catch (err) {
+                    if (err instanceof CancelledTaskError) return;
                     const name = docCached.fileName || url.split('/').pop();
                     showFileError(name, 'Rescan DOCX worker error: ' + (err.message || err));
                     failedCount++;
@@ -619,6 +626,7 @@ export async function rescanWithNewKeywords() {
     if (!state.pdfDoc || !state.currentDocUrl) return;
 
     initWorkerPool();
+    state.workerPool.cancelStale(state.docGeneration);
     const keywords = KEYWORDS || [];
 
     let fullText = '';
@@ -643,6 +651,7 @@ export async function rescanWithNewKeywords() {
         fn.precomputeAllSearches();
         if (state.currentDocUrl) fn.updateKeywordGrid(state.currentDocUrl);
     } catch (err) {
+        if (err instanceof CancelledTaskError) return;
         console.error('[Worker] Rescan with new keywords error:', err);
     }
 }
