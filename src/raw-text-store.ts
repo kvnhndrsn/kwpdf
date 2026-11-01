@@ -3,7 +3,7 @@
 // The selection text layer needs the *original* pdf.js TextContent (per-item
 // geometry plus the `styles` font map), but that object is large and must never
 // be pinned into `state.docTextCache`: those entries are shared by reference
-// with `state.textPageCache`, and their `_size` is measured by JSON.stringify
+// with `state.textPageCache`, and their `_size` is measured from text/items
 // before `raw` is ever attached, so `evictCaches()` could never reclaim it.
 // Keeping it here, in a small LRU keyed by page, bounds it to the pages the
 // user is actually looking at.

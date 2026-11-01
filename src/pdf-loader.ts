@@ -4,6 +4,7 @@ import { fn, pdfjsLib } from './cross';
 import { evictCaches } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
 import { processTextContent, processTextContentAsync } from './pdf-search';
+import { estimatePagesSize } from './cache-size';
 
 /** Pages extracted in parallel during load-time text extraction. */
 const EXTRACT_CONCURRENCY = 8;
@@ -167,7 +168,7 @@ function loadPDF(fileUrl, keyword = '') {
                     pages: pageTextData,
                     fileName,
                     _lastAccess: Date.now(),
-                    _size: JSON.stringify(pageTextData).length + fileName.length
+                    _size: estimatePagesSize(pageTextData) + fileName.length
                 };
                 state.docTextCache[fileUrl] = cached;
                 state.totalCacheSize += cached._size;

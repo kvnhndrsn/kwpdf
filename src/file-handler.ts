@@ -2,6 +2,7 @@ import { state } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { processTextContentAsync } from './pdf-search';
+import { estimatePagesSize, estimateTextEntrySize } from './cache-size';
 import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS } from './cross';
 
 export function getFileType(filename) {
@@ -146,7 +147,7 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             pages: pageTextData,
             fileName,
             _lastAccess: Date.now(),
-            _size: JSON.stringify(pageTextData).length + fileName.length
+            _size: estimatePagesSize(pageTextData) + fileName.length
         };
         state.docTextCache[id] = pdfCacheEntry;
         state.totalCacheSize += pdfCacheEntry._size;
@@ -204,7 +205,7 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
             fileName,
             type,
             _lastAccess: Date.now(),
-            _size: JSON.stringify({ html: htmlContent, text: plainText }).length + fileName.length
+            _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length
         };
         state.docContentCache[id] = docxCacheEntry;
         state.totalCacheSize += docxCacheEntry._size;
