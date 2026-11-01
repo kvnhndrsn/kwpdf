@@ -10,6 +10,16 @@ state.docOriginalHtml = null;
 state._docPageHtmls = null;
 state._docPageOffsets = null;
 
+// Results per query for the current document. DOCX search reruns the whole
+// document text through a fresh regex on every keystroke and every match step,
+// but that text only changes when another document is opened.
+const docQueryCache = new Map<string, any[]>();
+const DOC_QUERY_CACHE_LIMIT = 20;
+
+// Pages currently carrying <mark class="doc-highlight"> markup, so a
+// re-render can restore just those instead of re-parsing every page.
+const docHighlightedPages = new Set<number>();
+
 // ── helpers ──
 
 function splitHtmlIntoPages(html, targetPerPage = 3000) {
@@ -84,6 +94,32 @@ function findPageForIndex(charIndex, offsets) {
     return 1;
 }
 
+function computeDocResults(query) {
+    const cachedResults = docQueryCache.get(query);
+    if (cachedResults) return cachedResults;
+
+    const cached = state.docContentCache[state.currentDocUrl];
+    if (!cached) return [];
+
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const text = cached.text;
+    const results = [];
+    let match;
+
+    while ((match = localRegex.exec(text)) !== null) {
+        const page = state._docPageOffsets ? findPageForIndex(match.index, state._docPageOffsets) : 1;
+        results.push({ index: match.index, text: match[0], length: match[0].length, page });
+    }
+
+    if (docQueryCache.size >= DOC_QUERY_CACHE_LIMIT) {
+        const oldest = docQueryCache.keys().next();
+        if (!oldest.done) docQueryCache.delete(oldest.value);
+    }
+    docQueryCache.set(query, results);
+    return results;
+}
+
 function styleTables(container) {
     container.querySelectorAll('table').forEach(table => {
         table.style.borderCollapse = 'collapse';
@@ -104,6 +140,8 @@ export function loadDocxDoc(fileUrl, keyword = '') {
     const generation = beginDocGeneration();
 
     state.currentDocUrl = fileUrl;
+    docQueryCache.clear();
+    docHighlightedPages.clear();
     const cachedInfo = state.docContentCache[fileUrl];
     state.currentDocType = cachedInfo?.type || getDocTypeFromUrl(fileUrl);
 
@@ -178,6 +216,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
 
 function renderDocContent(html, plainText) {
     dom.viewer.innerHTML = '';
+    docHighlightedPages.clear();
 
     if (!html) {
         dom.viewer.innerHTML = '<div style="padding:20px;">No content to display</div>';
@@ -271,20 +310,11 @@ export function performDocSearch(query) {
     if (!state.currentDocUrl || !state.docContentCache[state.currentDocUrl]) return;
     state.allKeywordMode = false;
 
-    const cached = state.docContentCache[state.currentDocUrl];
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
-    const text = cached.text;
-    const results = [];
-    let match;
-
-    while ((match = localRegex.exec(text)) !== null) {
-        const page = state._docPageOffsets ? findPageForIndex(match.index, state._docPageOffsets) : 1;
-        results.push({ index: match.index, text: match[0], length: match[0].length, page });
-    }
+    const results = computeDocResults(query);
 
     state.docSearchResults = results;
     state.docCurrentMatchIndex = 0;
+    if (state.docContentCache[state.currentDocUrl]) state.docContentCache[state.currentDocUrl].lastQuery = query;
 
     if (results.length > 0) {
         dom.navGroup.classList.add('active');
@@ -307,17 +337,7 @@ export function cycleDocSearch(query) {
     if (!state.currentDocUrl || !state.docContentCache[state.currentDocUrl]) return;
     state.allKeywordMode = false;
 
-    const cached = state.docContentCache[state.currentDocUrl];
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
-    const text = cached.text;
-    const results = [];
-    let match;
-
-    while ((match = localRegex.exec(text)) !== null) {
-        const page = state._docPageOffsets ? findPageForIndex(match.index, state._docPageOffsets) : 1;
-        results.push({ index: match.index, text: match[0], length: match[0].length, page });
-    }
+    const results = computeDocResults(query);
 
     if (results.length === 0) return;
 
@@ -343,14 +363,17 @@ export function renderDocHighlights() {
 
     const pageHtmls = state._docPageHtmls;
 
-    // Restore all pages to original HTML
-    const pages = wrapper.querySelectorAll('.docx-page');
-    pages.forEach((page, i) => {
-        if (i < pageHtmls.length) {
-            page.innerHTML = pageHtmls[i];
-            styleTables(page);
-        }
-    });
+    // Restore only the pages that actually carry highlight markup. Rewriting
+    // every page's innerHTML on each match step re-parses the whole document
+    // just to move the `current` class on one of them.
+    for (const pageNum of docHighlightedPages) {
+        const pageEl = document.getElementById('page-' + pageNum);
+        const html = pageHtmls[pageNum - 1];
+        if (!pageEl || html === undefined) continue;
+        pageEl.innerHTML = html;
+        styleTables(pageEl);
+    }
+    docHighlightedPages.clear();
 
     if (!state.docSearchResults.length) return;
 
@@ -385,7 +408,7 @@ export function renderDocHighlights() {
         let node;
         while (node = walker.nextNode()) nodes.push(node);
 
-        let nodeAccum = 0;
+        let replaced = false;
         for (const textNode of nodes) {
             combinedRegex.lastIndex = 0;
             const content = textNode.textContent;
@@ -399,9 +422,10 @@ export function renderDocHighlights() {
                     return `<mark class="doc-highlight${isCurrent ? ' current' : ''}">${match}</mark>`;
                 });
                 textNode.parentNode.replaceChild(span, textNode);
+                replaced = true;
             }
-            nodeAccum += content.length;
         }
+        if (replaced) docHighlightedPages.add(pageNum);
     }
 
     const currentMark = document.querySelector('.doc-highlight.current');
