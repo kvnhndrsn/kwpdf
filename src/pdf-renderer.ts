@@ -264,7 +264,7 @@ function cancelNonVisibleRenders(visibleSet) {
 }
 
 function cancelAllRenders() {
-    for (const [pn, t] of state.renderTasks) {
+    for (const t of state.renderTasks.values()) {
         if (t && typeof t.cancel === 'function') {
             try { t.cancel(); } catch (e) {}
         }

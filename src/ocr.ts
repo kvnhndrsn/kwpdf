@@ -1,6 +1,6 @@
 import { state } from './state';
 import * as dom from './dom';
-import { fn, pdfjsLib, KEYWORDS, basePath } from './cross';
+import { pdfjsLib, KEYWORDS, basePath } from './cross';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 
 let ocrEnabled = true;
@@ -14,8 +14,6 @@ const RESOLUTION_STEPS = [1200, 900, 600, 300, 150];
 const STEP_TIMEOUT_MS = 60_000;
 const RENDER_TIMEOUT_MS = 30_000;
 const HIGHLIGHT_PAD = 3;
-
-let ocrTotalPages = 0;
 
 // Bumped by resetOcrState(). A run captures the value when it starts and stops
 // dispatching as soon as it no longer matches, so a cleared library cannot keep
@@ -60,7 +58,6 @@ export function resetOcrState() {
     workerCallbacks.clear();
 
     ocrFileState.clear();
-    ocrTotalPages = 0;
 }
 
 export function toggleOcrGlobal() {
@@ -263,7 +260,6 @@ async function startOcrForFile(url) {
     const pageScaleFactors = [];
 
     const totalToProcess = Math.min(actualNumPages, numPages);
-    ocrTotalPages = totalToProcess;
 
     dom.statusBar.textContent = 'OCR scanning ' + fileName + '...';
     dom.progressBar.style.width = '0%';

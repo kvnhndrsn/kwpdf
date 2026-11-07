@@ -314,7 +314,7 @@ function allKeywordResults(): any[] {
     const cache = state.searchCache;
     let entries = 0;
     let count = 0;
-    for (const [keyword, results] of Object.entries(cache)) {
+    for (const results of Object.values(cache)) {
         entries++;
         count += results.length;
     }

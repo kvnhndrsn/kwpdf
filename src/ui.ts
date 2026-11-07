@@ -1,11 +1,10 @@
 import { state, beginDocGeneration, beginSearch, resetLibraryState, dropCachedDocument } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
-import * as ocr from './ocr';
 import * as measure from './measure';
 import * as keywords from './keywords';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from './search-controller';
-import type { RenderQuality, RawSearchResult, SearchResult } from './types';
+import type { RenderQuality, SearchResult } from './types';
 
 state.renderQuality = (window.localStorage.getItem('pdf_render_quality') as RenderQuality) || 'medium';
 state.smoothScrollEnabled = false;
@@ -487,7 +486,7 @@ function closeSettings() {
     }
 }
 
-export function toggleSettings(e?: any) {
+export function toggleSettings(_e?: any) {
     state.settingsOpen = !state.settingsOpen;
 
     if (!state.settingsOpen) {
@@ -622,7 +621,6 @@ export function updateZoomDisplay() {
 
 export function updateToolbarState() {
     const hasDoc = !!state.currentDocUrl;
-    const hasDocx = state.currentDocType !== 'pdf' && hasDoc;
     const hasPdf = state.currentDocType === 'pdf' && hasDoc;
 
     (dom.zoomOutBtn as HTMLButtonElement).disabled = !hasDoc || state.currentScale <= 0.5;
@@ -1020,10 +1018,9 @@ export function setupEventListeners() {
         const updateScale = () => {
             if (measure.getIsCalibrating()) {
                 const val = dom.scaleInput.value.trim();
-                if (val && !isNaN(parseFloat(val))) {
-                } else {
-                    dom.scaleInput.value = '';
-                }
+                // Nothing to apply while calibrating: only reject input that
+                // cannot be parsed at all.
+                if (!val || isNaN(parseFloat(val))) dom.scaleInput.value = '';
                 return;
             }
             const numStr = dom.scaleInput.value.replace(/.*:/, '').replace(/[^0-9.]/g, '');
@@ -1057,7 +1054,7 @@ export function setupEventListeners() {
         updateMeasureUI();
     });
 
-    dom.viewerScroll.addEventListener('dblclick', (e) => {
+    dom.viewerScroll.addEventListener('dblclick', () => {
         const tool = measure.getActiveTool();
         if (tool === 'perimeter') {
             measure.finishPerimeter();

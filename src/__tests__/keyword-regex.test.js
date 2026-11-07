@@ -118,8 +118,7 @@ describe('keyword list normalization', () => {
         // A zero-length alternative used to match at every word boundary and
         // never advance lastIndex, hanging this loop.
         let count = 0;
-        let m;
-        while ((m = re.exec('geotextile and geotextile')) !== null) count++;
+        while (re.exec('geotextile and geotextile') !== null) count++;
         expect(count).toBe(2);
     });
 

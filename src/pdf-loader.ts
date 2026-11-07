@@ -3,7 +3,7 @@ import * as dom from './dom';
 import { fn, pdfjsLib, basePath } from './cross';
 import { evictCaches, getDocTypeFromUrl } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
-import { processTextContent, processTextContentAsync } from './pdf-search';
+import { processTextContentAsync } from './pdf-search';
 import { estimatePagesSize } from './cache-size';
 import { requestPassword } from './password-prompt';
 

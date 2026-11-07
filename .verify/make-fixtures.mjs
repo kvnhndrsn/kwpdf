@@ -136,10 +136,6 @@ const DOCX_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 function paragraph(text) {
     return `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 }
-function pageBreak() {
-    return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
-}
-
 async function writeDocx(file, paragraphs) {
     const zip = new JSZip();
     zip.file('[Content_Types].xml', DOCX_CT);

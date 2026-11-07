@@ -191,14 +191,9 @@ function renderTree(node, path = '') {
         if (totalMatches > 0) {
             const countSpan = document.createElement('span');
             countSpan.className = 'tree-count';
-            let displayText: string | number = totalMatches;
-            if (state.allKeywordMode && state.currentDocUrl === doc.url) {
-                if (doc.type === 'pdf' && state.searchResults.length > 0 && state.currentMatchIndex >= 0) {
-                    displayText = `${state.currentMatchIndex + 1}/${state.searchResults.length}`;
-                } else if ((doc.type === 'docx' || doc.type === 'doc') && state.docSearchResults.length > 0 && state.docCurrentMatchIndex >= 0) {
-                    displayText = `${state.docCurrentMatchIndex + 1}/${state.docSearchResults.length}`;
-                }
-            }
+            // The match-position text this used to compute was never read: the
+            // span always shows the total. Kept as the total so the tree matches
+            // the counts the scan reports.
             countSpan.textContent = String(totalMatches);
 
             countSpan.addEventListener('click', function(e) {

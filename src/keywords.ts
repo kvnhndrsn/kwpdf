@@ -1,6 +1,6 @@
 import { state, createSearchCache } from './state';
 import * as dom from './dom';
-import { clearKeywordRegexCache, getKeywordRegex } from './keyword-regex';
+import { clearKeywordRegexCache } from './keyword-regex';
 import { fn, setKeywords, setKeywordLists, setDefaultListName } from './cross';
 
 let DEFAULT_LIST_NAME = 'Central Supply-Only';
@@ -144,10 +144,6 @@ export function switchKeywordList(listName) {
     return true;
 }
 
-function saveKeywords() {
-    localStorage.setItem('tender_keywords', JSON.stringify(KEYWORDS));
-    localStorage.setItem('tender_keyword_list', currentListName || DEFAULT_LIST_NAME);
-}
 
 /**
  * Keyword membership changed: per-document counts, the keyword grid and every

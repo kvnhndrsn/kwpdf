@@ -290,8 +290,7 @@ export function countMatchesInAllDocs(
                 if (text) {
                     regex.lastIndex = 0;
                     let count = 0;
-                    let m: RegExpExecArray | null;
-                    while ((m = regex.exec(text)) !== null) count++;
+                    while (regex.exec(text) !== null) count++;
                     if (count > 0) {
                         results[url] = count;
                         totalMatches += count;

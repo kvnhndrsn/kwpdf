@@ -11,7 +11,6 @@
 import { state } from './state';
 import * as dom from './dom';
 import { planHighlightSync } from './highlight-plan';
-import type { SearchResult } from './types';
 
 /** Pages that currently carry highlight marks. */
 const decoratedPages = new Set<number>();

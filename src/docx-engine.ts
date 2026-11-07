@@ -483,7 +483,6 @@ export function renderDocHighlights() {
         const pageEl = document.getElementById('page-' + pageNum);
         if (!pageEl) continue;
 
-        const pageText = state.textPageCache[pageNum]?.text || '';
         const pageResults = resultsByPage[pageNum];
 
         // Build a single regex matching any of the result texts (word-bounded, matching search)
@@ -506,7 +505,7 @@ export function renderDocHighlights() {
         const walker = document.createTreeWalker(pageEl, NodeFilter.SHOW_TEXT, null as any);
         const nodes = [];
         let node;
-        while (node = walker.nextNode()) nodes.push(node);
+        while ((node = walker.nextNode())) nodes.push(node);
 
         let replaced = false;
         for (const textNode of nodes) {

@@ -24,6 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       # The build is the only step that runs esbuild over every entry point, so
       # it is what catches a module that no test imports.

@@ -536,7 +536,7 @@ export async function handleDrop(e) {
             }
         }
         state.basePath = '';
-        let filesToProcess = [];
+        const filesToProcess = [];
         let processedArchive = false;
 
         const viewerMsg = document.getElementById('viewerDropMsg');
@@ -613,7 +613,7 @@ async function traverseFileTree(item, fileList, baseDir = '') {
             dom.statusBar.textContent = 'Reading folder: found ' + fileList.length + ' files...';
         }
     } else if (item.isDirectory) {
-        let entries = [];
+        const entries = [];
         try {
             const dirReader = item.createDirectoryReader ? item.createDirectoryReader() : item.createReader();
             while (true) {
@@ -758,7 +758,7 @@ export function initFileHandler() {
         const statusMsgs = dom.resultsArea.querySelectorAll('.status-msg');
         statusMsgs.forEach(el => el.remove());
 
-        let filesToProcess = [];
+        const filesToProcess = [];
         let processedArchive = false;
         const items = Array.from((e.target as HTMLInputElement).files || []);
         const hasZip = items.some(f => f.name.toLowerCase().endsWith('.zip'));
