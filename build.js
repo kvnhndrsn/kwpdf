@@ -61,6 +61,23 @@ copy('node_modules/pdfjs-dist/standard_fonts', 'standard_fonts');
 copy('src/doc_processor_worker.js', 'utils/doc_processor_worker.js');
 copy('src/ocr_worker.js', 'utils/ocr_worker.js');
 
+// OCR runtime, self-hosted (was a floating tesseract.js@5 import from jsDelivr
+// inside ocr_worker.js). Pinned in package.json; these copies are what the OCR
+// worker loads, so first use needs no network and a version bump cannot change
+// behaviour silently.
+copy('node_modules/tesseract.js/dist/tesseract.min.js', 'tesseract/tesseract.min.js');
+copy('node_modules/tesseract.js/dist/worker.min.js', 'tesseract/worker.min.js');
+// tesseract.js picks SIMD or plain at runtime, so both LSTM cores are shipped.
+// Only the .js halves: these builds embed the wasm as base64 (a ~3.8 MB inline
+// blob, no reference to the sibling .wasm file), so the 2.8 MB .wasm copies
+// would never be requested.
+for (const core of ['tesseract-core-simd-lstm.wasm.js', 'tesseract-core-lstm.wasm.js']) {
+    copy('node_modules/tesseract.js-core/' + core, 'tesseract/' + core);
+}
+// Integer LSTM (oem 1) language data, 2.9 MB gzipped instead of the 11 MB
+// legacy set; tesseract.js decompresses it itself.
+copy('node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', 'tesseract/eng.traineddata.gz');
+
 /**
  * Hash every shipped file, not just the bundle. CACHE_NAME used to come from
  * bundle.js alone, so editing style.css, keywords.json, an icon or a worker
@@ -105,4 +122,4 @@ if (sw.includes('__CACHE_VERSION__')) {
 }
 fs.writeFileSync(path.join(dist, 'service_worker.js'), sw);
 
-console.log('Build complete: dist/bundle.js + dist/pdf.worker.min.mjs [cache:' + buildHash + ']');
+console.log('Build complete: dist/bundle.js + dist/pdf.worker.min.mjs + dist/tesseract/ [cache:' + buildHash + ']');

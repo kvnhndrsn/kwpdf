@@ -12,9 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
     "jszip": "3.10.1",
     "mammoth": "1.11.0",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "5.1.1",
+    "tesseract.js-core": "5.1.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

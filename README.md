@@ -50,8 +50,13 @@ after a rebuild.
   app shows a banner with a Retry action instead of silently reporting no matches.
 - **Legacy `.doc` is not supported.** Mammoth only reads `.docx`; save binary
   Word files as `.docx` first.
-- **OCR needs a network connection on first use.** The Tesseract runtime is
-  loaded from a CDN rather than bundled, and is not part of the offline cache.
+- **OCR is self-hosted.** The Tesseract runtime, its wasm core and the eng
+  language data ship in `dist/tesseract/` (copied from the pinned
+  `tesseract.js`, `tesseract.js-core` and `@tesseract.js-data/eng` packages), so
+  OCR needs no CDN. The two small scripts are precached; the wasm cores and
+  language data (~11 MB, wasm inlined in the core scripts) are cached on first
+  OCR use, so the first run after a fresh install reads them from the app's own
+  origin and later runs work offline.
 - **Background tabs.** pdf.js renders through `requestAnimationFrame`, which is
   paused in a hidden tab; a document opened while the tab is in the background
   finishes loading when you return to it.

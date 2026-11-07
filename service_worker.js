@@ -11,6 +11,12 @@ const LOCAL_ASSETS = [
     './icons/docx.svg',
     './icons/zip.svg',
     './icons/github.svg',
+    // OCR loader and its nested worker script: small, and needed to start at
+    // all. The wasm core and eng.traineddata.gz (~6 MB together) are cached on
+    // first OCR use by the runtime handler below rather than on install, so a
+    // visitor who never uses OCR does not download them.
+    './tesseract/tesseract.min.js',
+    './tesseract/worker.min.js',
 ];
 
 self.addEventListener('install', event => {
