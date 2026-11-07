@@ -202,6 +202,19 @@
     </div>
 </div>
 
+<div id="passwordDialog">
+    <div class="modal">
+        <h3>Password required</h3>
+        <p class="modal-text" id="passwordFileName"></p>
+        <input type="password" id="passwordInput" placeholder="Password" autocomplete="off">
+        <p class="modal-error" id="passwordError" style="display:none;"></p>
+        <div class="modal-footer">
+            <button id="passwordCancelBtn" class="btn-action" style="flex:none; width:100px;">Cancel</button>
+            <button id="passwordOpenBtn" class="btn-action" style="flex:none; width:80px; background:var(--accent); color:white; border:none;">Open</button>
+        </div>
+    </div>
+</div>
+
 <div id="newListDialog">
     <div class="modal">
         <h3>New Keyword List</h3>

@@ -1161,6 +1161,19 @@ input, select, button, textarea {
     display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.7); z-index: 10003; align-items: center; justify-content: center;
 }
+
+#passwordDialog {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); z-index: 10004; align-items: center; justify-content: center;
+}
+#passwordDialog.show { display: flex; }
+#passwordDialog .modal { background: var(--grey-800); padding: 24px; border-radius: 12px; width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+#passwordDialog .modal-text { font-size: 0.8rem; color: var(--grey-400); margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#passwordDialog input {
+    width: 100%; padding: 10px; margin: 12px 0; border-radius: 6px;
+    border: 1px solid var(--grey-600); background: var(--grey-900); color: var(--grey-300); box-sizing: border-box;
+}
+#passwordDialog .modal-error { font-size: 0.75rem; color: #ff8080; margin: 0 0 12px; }
 #newListDialog.show { display: flex; }
 #newListDialog .modal { background: var(--grey-800); padding: 24px; border-radius: 12px; width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
 #newListDialog input {

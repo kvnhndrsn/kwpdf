@@ -5,6 +5,7 @@ import { evictCaches } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
 import { processTextContent, processTextContentAsync } from './pdf-search';
 import { estimatePagesSize } from './cache-size';
+import { requestPassword } from './password-prompt';
 
 /** Pages extracted in parallel during load-time text extraction. */
 const EXTRACT_CONCURRENCY = 8;
@@ -68,6 +69,10 @@ function loadPDF(fileUrl, keyword = '') {
     document.documentElement.style.setProperty('--pdf-scale', '1');
 
     (async () => {
+        // Set when the user dismisses the password prompt, so the rejection that
+        // destroying the loading task causes is reported as "password required"
+        // rather than as a broken PDF.
+        let passwordCancelled = false;
         try {
             // CMaps and standard font data ship with the build: without them
             // CJK text and non-embedded standard fonts render as missing
@@ -79,6 +84,21 @@ function loadPDF(fileUrl, keyword = '') {
                 standardFontDataUrl: basePath + 'standard_fonts/',
                 isEvalSupported: false,
             });
+            // Without this handler pdf.js rejects an encrypted document outright.
+            // It calls back again with reason 2 when the password was wrong.
+            loadingTask.onPassword = (updatePassword, reason) => {
+                if (!isCurrentGeneration(generation)) return;
+                const fileName = state.docDataCache[fileUrl]?.name || 'This PDF';
+                requestPassword(fileName, reason === 2).then((password) => {
+                    if (!isCurrentGeneration(generation)) return;
+                    if (password === null) {
+                        passwordCancelled = true;
+                        try { loadingTask.destroy(); } catch (e) { /* already gone */ }
+                        return;
+                    }
+                    updatePassword(password);
+                });
+            };
             const doc = await loadingTask.promise;
 
             if (!isCurrentGeneration(generation)) {
@@ -242,6 +262,14 @@ function loadPDF(fileUrl, keyword = '') {
             if (keyword) fn.performSearch(keyword);
         } catch (err) {
             if (!isCurrentGeneration(generation)) return;
+            if (passwordCancelled) {
+                // The document is still selectable in the tree; only this attempt
+                // to open it was abandoned.
+                dom.loaderFilename.textContent = 'Password required';
+                dom.loaderStatus.textContent = 'This PDF is password-protected. Drop it again to enter the password.';
+                dom.loaderProgressFill.style.width = '0%';
+                return;
+            }
             dom.loaderFilename.textContent = 'Error loading PDF';
             dom.loaderStatus.textContent = err.message;
             dom.loaderProgressFill.style.width = '0%';

@@ -12,6 +12,20 @@ const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0];
 export const LEGACY_DOC_MESSAGE = "Legacy .doc isn't supported \u2014 save it as .docx";
 
 /**
+ * Batch extraction has nobody to ask for a password, so an encrypted PDF is
+ * reported as skipped instead of as a broken file. The single-file path loads
+ * through pdf-loader, which prompts.
+ */
+export const PASSWORD_PROTECTED_MESSAGE = 'Skipped (password-protected)';
+
+export function isPasswordException(err) {
+    return err?.name === 'PasswordException';
+}
+
+/** Encrypted files skipped in the batch scan currently running. */
+let passwordSkipped = 0;
+
+/**
  * Mammoth only reads OOXML. Sniffing the header catches the legacy format even
  * when it arrives as `report.doc` from a folder drop, before Mammoth is asked
  * to parse it and returns something generic.
@@ -190,6 +204,11 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
 
         return pdfCacheEntry;
     } catch (err) {
+        if (isPasswordException(err)) {
+            passwordSkipped++;
+            showFileError(fileName, PASSWORD_PROTECTED_MESSAGE);
+            return;
+        }
         showFileError(fileName, 'Failed to extract PDF text: ' + (err.message || err));
     } finally {
         // Batch extraction never hands the document to state.pdfDoc, so nothing
@@ -432,6 +451,7 @@ async function processFiles(source) {
     const skippedByLimit = batch.skippedByLimit;
     let failedCount = 0;
     let handled = 0;
+    passwordSkipped = 0;
 
     // Throttle sidebar tree rebuilds for the duration of the scan: one full
     // rebuild per file is quadratic, and each file already renders its own
@@ -459,6 +479,19 @@ async function processFiles(source) {
 
     if (failedCount > 0) {
         dom.statusBar.textContent = failedCount + ' file(s) failed to process';
+    }
+
+    // An encrypted entry isn't a broken one, and the generic failure count hides
+    // that there is a password to supply: say so, and how to supply it.
+    if (passwordSkipped > 0) {
+        const note = document.createElement('div');
+        note.className = 'status-msg';
+        note.textContent = passwordSkipped + ' file(s) skipped — password-protected ' +
+            '(open one on its own to enter its password)';
+        dom.resultsArea.prepend(note);
+        const otherFailures = failedCount - passwordSkipped;
+        dom.statusBar.textContent = passwordSkipped + ' file(s) skipped (password-protected)' +
+            (otherFailures > 0 ? ' · ' + otherFailures + ' failed' : '');
     }
 
     if (skippedByLimit > 0) {
