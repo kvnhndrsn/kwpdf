@@ -1,7 +1,7 @@
 import { state } from './state';
 import * as dom from './dom';
 import { fn, KEYWORDS } from './cross';
-import { getFileIcon, getFileType } from './file-handler';
+import { fileDedupeKey, getFileIcon, getFileType } from './file-handler';
 import { keywordAt } from './keyword-index';
 
 let _loadDocument, _cycleSearch, _cycleDocSearch, _cycleAllKeywords, _cycleAllDocKeywords, _closeMobileSidebar;
@@ -69,10 +69,17 @@ export function setActiveCardFromUrl(url) {
     updateKeywordGrid(url);
 }
 
+/** Remember which dropped file this entry came from, so a re-drop is skipped. */
+function markDedupeKey(url, file) {
+    const entry = state.docDataCache[url];
+    if (entry && file) entry._dedupeKey = fileDedupeKey(file);
+}
+
 export function renderPlaceholderCard(fileName, url, file) {
     const type = getFileType(fileName);
     const { name: baseName, folder } = getPathParts(file, null);
     state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts: {}, url, type };
+    markDedupeKey(url, file);
     renderResultsArea();
 }
 
@@ -82,6 +89,7 @@ export function renderCard(fileName, counts, url, file) {
     const folder = file ? getPathParts(file, null).folder : existing?.folder || state.basePath || '';
     const type = getFileType(fileName);
     state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url, type };
+    markDedupeKey(url, file);
 
     if (existing?._ocrCounts) {
         for (const [kw, c] of Object.entries(existing._ocrCounts)) {

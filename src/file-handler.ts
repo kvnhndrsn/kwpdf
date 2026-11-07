@@ -46,6 +46,29 @@ export function getFileType(filename) {
 }
 
 /**
+ * Identity of a dropped file.
+ *
+ * The name alone is not enough (A/drawing.pdf and B/drawing.pdf are different
+ * drawings) and a drop creates a fresh object URL every time, so the same file
+ * dropped twice looked like a new document. Path plus size plus modification
+ * time identifies it. The keys live on `docDataCache`, so clearing the library
+ * resets this with it.
+ */
+export function fileDedupeKey(file): string {
+    const path = file?.relativePath || file?.name || '';
+    return path + '|' + (file?.size ?? '') + '|' + (file?.lastModified ?? '');
+}
+
+/** URL of the already-loaded document `file` duplicates, if there is one. */
+export function findDuplicateUrl(file): string | null {
+    const key = fileDedupeKey(file);
+    for (const [url, doc] of Object.entries(state.docDataCache)) {
+        if ((doc as any)?._dedupeKey === key) return url;
+    }
+    return null;
+}
+
+/**
  * Canonical document-type resolution for a document URL.
  *
  * pdf-loader.ts and docx-engine.ts each carried a copy of this with slightly
@@ -423,6 +446,16 @@ async function processFiles(source) {
             return;
         }
 
+        if (findDuplicateUrl(file)) {
+            state.processed = 1;
+            state.totalFiles = 1;
+            dom.progressBar.style.width = '0%';
+            state.emit('stats-changed');
+            // After the emit: the stats handler rewrites this line.
+            dom.statusBar.textContent = 'Already loaded: ' + file.name;
+            return;
+        }
+
         // A legacy .doc would otherwise get a placeholder row and then fail
         // inside Mammoth, leaving a dead entry and a success message. Reject it
         // before anything is added to the tree. The header check also catches a
@@ -479,6 +512,7 @@ async function processFiles(source) {
     const skippedByLimit = batch.skippedByLimit;
     let failedCount = 0;
     let handled = 0;
+    let duplicatesSkipped = 0;
     passwordSkipped = 0;
 
     // Throttle sidebar tree rebuilds for the duration of the scan: one full
@@ -493,6 +527,14 @@ async function processFiles(source) {
             for (const file of chunk.files) {
                 if (handled >= batch.total) break;
                 handled++;
+                // Checked per file rather than by pre-filtering: a drop can
+                // contain two copies of the same file, and the first one only
+                // registers its key once its card is rendered.
+                if (findDuplicateUrl(file)) {
+                    duplicatesSkipped++;
+                    updateProgressMainThread();
+                    continue;
+                }
                 if (!(await processBatchFile(file))) failedCount++;
             }
         }
@@ -507,6 +549,17 @@ async function processFiles(source) {
 
     if (failedCount > 0) {
         dom.statusBar.textContent = failedCount + ' file(s) failed to process';
+    }
+
+    if (duplicatesSkipped > 0) {
+        const note = document.createElement('div');
+        note.className = 'status-msg';
+        note.textContent = duplicatesSkipped + ' file(s) skipped — already loaded';
+        dom.resultsArea.prepend(note);
+        dom.statusBar.textContent =
+            duplicatesSkipped +
+            ' duplicate(s) skipped' +
+            (dom.statusBar.textContent ? ' · ' + dom.statusBar.textContent : '');
     }
 
     // An encrypted entry isn't a broken one, and the generic failure count hides

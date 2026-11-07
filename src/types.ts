@@ -129,6 +129,8 @@ export interface DocDataCacheEntry {
     _originalCounts?: Record<string, number>;
     _ocrCounts?: Record<string, number>;
     _ocrTotalMatches?: number;
+    /** Identity of the dropped file, so a re-drop of it can be skipped. */
+    _dedupeKey?: string;
 }
 
 // ── Keyword / list types ──

@@ -3,14 +3,14 @@ import { test, expect } from '@playwright/test';
 // The app has no upload endpoint: a drop is a file input plus a change event, so
 // the suite builds the same DataTransfer the browser would. Fixtures are fetched
 // from the served origin, which is what the app's own object URLs wrap.
-async function dropFiles(page, names, relativePaths = {}) {
+async function dropFiles(page, names, relativePaths = {}, lastModified) {
     await page.evaluate(
-        async ({ names, relativePaths }) => {
+        async ({ names, relativePaths, lastModified }) => {
             const files = [];
             for (const name of names) {
                 const res = await fetch('fixtures/' + name, { cache: 'reload' });
                 const fileName = name.split('/').pop();
-                const file = new File([await res.blob()], fileName);
+                const file = new File([await res.blob()], fileName, lastModified ? { lastModified } : undefined);
                 // The folder picker sets this on every file; a synthesised drop
                 // has to as well for the path to survive.
                 if (relativePaths[name]) {
@@ -24,7 +24,7 @@ async function dropFiles(page, names, relativePaths = {}) {
             input.files = transfer.files;
             input.dispatchEvent(new Event('change', { bubbles: true }));
         },
-        { names, relativePaths },
+        { names, relativePaths, lastModified },
     );
 }
 
@@ -91,6 +91,22 @@ test('attributes DOCX matches to pages and navigates them', async ({ page }) => 
     await page.locator('#findNextBtn').click();
     await expect(page.locator('#matchInput')).toHaveValue('2');
     expect(await currentDocMatchPage(page)).toContain('Section 14');
+});
+
+test('skips a file that is already loaded', async ({ page }) => {
+    const when = 1_700_000_000_000;
+    const rows = page.locator('.tree-file-item');
+
+    await dropFiles(page, ['one-kw.pdf'], {}, when);
+    await expect(rows).toHaveCount(1);
+    const countText = (await rows.first().locator('.tree-count').textContent()).trim();
+
+    // The same file again: same path, size and modification time, but a new drop
+    // and therefore a new object URL.
+    await dropFiles(page, ['one-kw.pdf'], {}, when);
+    await expect(rows).toHaveCount(1);
+    await expect(page.locator('#statusBar')).toContainText('Already loaded: one-kw.pdf');
+    await expect(rows.first().locator('.tree-count')).toHaveText(countText);
 });
 
 test('renders a folder name literally instead of as markup', async ({ page }) => {

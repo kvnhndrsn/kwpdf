@@ -198,3 +198,12 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - Two findings while writing it: `repeated-3.docx` scans to zero because its text uses "tender", which is not in the shipped keyword list (the fixture only makes sense for ad-hoc search), so the DOCX case uses `waiting.docx`; and a folder name containing slashes (`<b>x</b>`) is split into extra tree levels by the app's path parsing — pre-existing behaviour, so the test asserts escaping rather than nesting.
 - CI installs Chromium (`npx playwright install --with-deps chromium`) and runs `npm run e2e` after the build. `test-results/`, `playwright-report/` are gitignored and excluded from ESLint.
 - Verified: e2e 3/3 passing, eslint 0, format:check 0, typecheck 0, 257 unit tests.
+
+## E4 — duplicate drops
+
+- Dropping the same file twice used to create a second object URL, a second tree row and a second cache entry, so every count doubled. Files are now identified by `relativePath || name` + `size` + `lastModified` (`fileDedupeKey`), and `processFiles` skips a file whose key is already on an entry in `docDataCache`. Because the keys live on the cache entries, clearing the library (which empties `docDataCache`) resets the check — no separate index to keep in sync.
+- The path is part of the key on purpose: `two-folders/A/drawing.pdf` and `two-folders/B/drawing.pdf` are different drawings and both still load.
+- Single drop: the status line says "Already loaded: <name>" and nothing is added. Batch/ZIP: skipped files are counted, a "N file(s) skipped — already loaded" note is prepended to the results, and the status line leads with the duplicate count.
+- The check runs per file as the batch advances rather than as a pre-filter, because a single drop can contain two copies of the same file and the first one only registers its key when its card is rendered.
+- Ordering detail: the status line is set *after* `emit('stats-changed')` in the single-file path, because the stats handler rewrites it (the first e2e attempt read "8 matches across 1 document" instead).
+- Verified by a new Playwright case: drop `one-kw.pdf` twice with the same `lastModified` → still one tree row, count unchanged, "Already loaded" in the status bar. Plus eslint 0, format:check 0, typecheck 0, 257 unit tests, 4 e2e tests.
