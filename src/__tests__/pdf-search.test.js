@@ -35,6 +35,40 @@ describe('processTextContent', () => {
         expect(result.text).toBe('helloworld');
     });
 
+    it('joins rotated runs along their vertical advance axis', () => {
+        // 90 degree text: glyphs advance upward, so width and gaps are on y.
+        const items = [
+            { str: 'hello', transform: [0, 10, -10, 0, 100, 0], width: 30, height: 10 },
+            { str: 'world', transform: [0, 10, -10, 0, 100, 30], width: 30, height: 10 },
+        ];
+        // The x/gap logic used to treat these as different lines and pad them.
+        expect(processTextContent({ items }).text).toBe('helloworld');
+    });
+
+    it('inserts a space between rotated runs with a vertical gap', () => {
+        const items = [
+            { str: 'hello', transform: [0, 10, -10, 0, 100, 0], width: 30, height: 10 },
+            { str: 'world', transform: [0, 10, -10, 0, 100, 35], width: 30, height: 10 },
+        ];
+        expect(processTextContent({ items }).text).toBe('hello world');
+    });
+
+    it('treats a sideways move as a new line for rotated runs', () => {
+        const items = [
+            { str: 'hello', transform: [0, 10, -10, 0, 100, 0], width: 30, height: 10 },
+            { str: 'world', transform: [0, 10, -10, 0, 120, 40], width: 30, height: 10 },
+        ];
+        expect(processTextContent({ items }).text).toBe('hello world');
+    });
+
+    it('handles 270 degree runs, which advance downward', () => {
+        const items = [
+            { str: 'hello', transform: [0, -10, 10, 0, 100, 100], width: 30, height: 10 },
+            { str: 'world', transform: [0, -10, 10, 0, 100, 70], width: 30, height: 10 },
+        ];
+        expect(processTextContent({ items }).text).toBe('helloworld');
+    });
+
     it('inserts space for newline without hyphen break', () => {
         const items = [
             { str: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },

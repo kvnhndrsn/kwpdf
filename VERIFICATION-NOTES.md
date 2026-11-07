@@ -62,6 +62,12 @@ Never exercised in a browser:
   keep separate sets, but the measurement *overlay* did not render in my
   headless run even for the file I measured, so on-screen isolation on
   switching documents is unconfirmed.
+- **B7 — rotated text runs.** Both extractors (main thread and
+  `doc_processor_worker.js`) now measure gaps along the run's own axis, and unit
+  tests cover 90°/270°/adjacent/gapped/sideways cases. Not yet exercised on a
+  real PDF whose content stream draws rotated text: `rotated.pdf` uses `/Rotate
+  90`, which rotates the page but leaves the text runs horizontal, so it does not
+  reach this code. A fixture with `0 1 -1 0 x y Tm` text is worth adding.
 - **C2 — wrapped highlights.** Confirmed on `wrap.pdf` (two marks, 40 px and
   60 px). Not checked: a match that wraps across a page or column boundary.
 - **D3 — build hash.** `CACHE_NAME` now changes for any shipped file. Note that
