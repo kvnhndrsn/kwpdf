@@ -41,6 +41,7 @@ export let createNewListBtn: HTMLElement | null = null;
 export let settingsBtn: HTMLElement | null = null;
 export let settingsMenu: HTMLElement | null = null;
 export let settingsKwBtn: HTMLElement | null = null;
+export let clearTextCacheBtn: HTMLElement | null = null;
 export let settingsThemeBtn: HTMLElement | null = null;
 export let settingsAnimateBtn: HTMLElement | null = null;
 export let resizer: HTMLElement | null = null;
@@ -112,6 +113,7 @@ export function init(): void {
     settingsBtn = document.getElementById('settingsBtn');
     settingsMenu = document.getElementById('settingsMenu');
     settingsKwBtn = document.getElementById('settingsKwBtn');
+    clearTextCacheBtn = document.getElementById('clearTextCacheBtn');
     settingsThemeBtn = document.getElementById('settingsThemeBtn');
     settingsAnimateBtn = document.getElementById('settingsAnimateBtn');
     resizer = document.getElementById('resizer');

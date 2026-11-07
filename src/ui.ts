@@ -5,6 +5,7 @@ import * as measure from './measure';
 import { isScanRunning } from './file-handler';
 import { isOcrRunning } from './ocr';
 import { exportResultsCsv } from './export-results';
+import { clearTextCache } from './text-store';
 import * as keywords from './keywords';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from './search-controller';
 import type { RenderQuality, SearchResult } from './types';
@@ -764,6 +765,13 @@ export function setupEventListeners() {
             rows === 0 ? 'No results to export' : `Exported ${rows} row${rows === 1 ? '' : 's'} to CSV`;
     });
     dom.settingsBtn?.addEventListener('click', toggleSettings);
+    dom.clearTextCacheBtn?.addEventListener('click', async () => {
+        closeSettings();
+        const cleared = await clearTextCache();
+        dom.statusBar.textContent = cleared
+            ? 'Saved text cache cleared — documents will be re-extracted on import'
+            : 'No saved text cache to clear';
+    });
     dom.mobileToggleBtn?.addEventListener('click', toggleMobileSidebar);
 
     /* Settings menu buttons */

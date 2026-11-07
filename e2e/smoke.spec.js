@@ -94,6 +94,91 @@ test('attributes DOCX matches to pages and navigates them', async ({ page }) => 
     expect(await currentDocMatchPage(page)).toContain('Section 14');
 });
 
+/** Number of documents whose extracted text is saved in IndexedDB. */
+async function cachedTextCount(page) {
+    return page.evaluate(
+        () =>
+            new Promise((resolve) => {
+                const request = indexedDB.open('kwpdf-text-cache', 1);
+                // Same schema the app uses, so an empty database created here
+                // is still usable by the app afterwards.
+                request.onupgradeneeded = () => request.result.createObjectStore('texts', { keyPath: 'key' });
+                request.onsuccess = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains('texts')) {
+                        db.close();
+                        resolve(0);
+                        return;
+                    }
+                    const count = db.transaction('texts', 'readonly').objectStore('texts').count();
+                    count.onsuccess = () => {
+                        db.close();
+                        resolve(count.result);
+                    };
+                    count.onerror = () => {
+                        db.close();
+                        resolve(0);
+                    };
+                };
+                request.onerror = () => resolve(0);
+            }),
+    );
+}
+
+/** Write a fabricated extraction for a fixture, keyed the way the app keys it. */
+async function seedCachedText(page, name, text) {
+    await page.evaluate(
+        async ({ name, text }) => {
+            const bytes = await (await fetch('fixtures/' + name, { cache: 'reload' })).arrayBuffer();
+            const digest = await crypto.subtle.digest('SHA-256', bytes);
+            const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+            await new Promise((resolve, reject) => {
+                const request = indexedDB.open('kwpdf-text-cache', 1);
+                request.onupgradeneeded = () => request.result.createObjectStore('texts', { keyPath: 'key' });
+                request.onsuccess = () => {
+                    const db = request.result;
+                    const transaction = db.transaction('texts', 'readwrite');
+                    transaction.objectStore('texts').put({
+                        key: hex + '|' + name,
+                        v: 1,
+                        type: 'pdf',
+                        name,
+                        savedAt: Date.now(),
+                        pages: [{ text, viewport: { width: 612, height: 792 }, items: null }],
+                    });
+                    transaction.oncomplete = () => {
+                        db.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => {
+                        db.close();
+                        reject(transaction.error);
+                    };
+                };
+                request.onerror = () => reject(request.error);
+            });
+        },
+        { name, text },
+    );
+}
+
+test('caches extracted text and reuses it on a later import', async ({ page }) => {
+    await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+    await expect.poll(() => cachedTextCount(page), { timeout: 10_000 }).toBeGreaterThan(0);
+
+    // Reload for an empty library, then fabricate this file's extraction. If the
+    // import reuses it, the tree reports the fabricated count instead of the
+    // real one; a miss would show the real count.
+    await page.reload();
+    await seedCachedText(page, 'one-kw.pdf', 'geotextile '.repeat(9));
+
+    await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+    await expect(page.locator('.tree-file-item', { hasText: 'one-kw.pdf' }).locator('.tree-count')).toHaveText('9');
+});
+
 test('exports the scan results as CSV', async ({ page }) => {
     await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
     await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });

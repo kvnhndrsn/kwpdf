@@ -5,6 +5,7 @@ import { processTextContentAsync } from './pdf-search';
 import { estimatePagesSize, estimateTextEntrySize } from './cache-size';
 import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS, basePath } from './cross';
 import { htmlToText } from './html-text';
+import { cacheKey, readStoredText, storePdfText, storeDocxText } from './text-store';
 
 /** Word 97-2003 `.doc` files are OLE2 compound files; OOXML `.docx` is a ZIP. */
 const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0];
@@ -180,6 +181,86 @@ export function evictCaches() {
     }
 }
 
+/**
+ * Count keyword hits across page (or document) texts.
+ *
+ * Shared by the extractors and by the IndexedDB hydration path: a hydrated
+ * document must produce exactly the counts a freshly extracted one would, or
+ * the text cache would quietly change scan results.
+ */
+export function countKeywordMatches(texts: string[], keywords = KEYWORDS || []) {
+    const combinedRegex = getKeywordRegex(keywords);
+    const counts = {};
+    let total = 0;
+
+    if (!combinedRegex) return { counts, total };
+
+    for (const text of texts) {
+        if (!text) continue;
+        const regex = new RegExp(combinedRegex.source, 'gi');
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const key = normalizeKeywordMatch(match, keywords);
+            if (!key) continue;
+            counts[key] = (counts[key] || 0) + 1;
+            total++;
+        }
+    }
+
+    return { counts, total };
+}
+
+/** Store a PDF's page text under `id` and publish its counts. */
+function cachePdfEntry(id, fileName, pageTextData, file) {
+    const { counts, total: totalMatches } = countKeywordMatches(pageTextData.map((p) => p.text || ''));
+
+    const pdfCacheEntry = {
+        totalPages: pageTextData.length,
+        pages: pageTextData,
+        fileName,
+        _lastAccess: Date.now(),
+        _size: estimatePagesSize(pageTextData) + fileName.length,
+    };
+    // A rescan of the same URL replaces the entry; drop the old one first
+    // or its size stays counted forever.
+    dropCachedDocument(id);
+    state.docTextCache[id] = pdfCacheEntry;
+    state.totalCacheSize += pdfCacheEntry._size;
+    evictCaches();
+    state.totalDocsFound++;
+
+    fn.renderCard(fileName, counts, id, file);
+    state.totalMatchesFound += totalMatches;
+    state.emit('stats-changed');
+
+    return pdfCacheEntry;
+}
+
+/** Store a DOCX's HTML/text under `id` and publish its counts. */
+function cacheDocxEntry(id, fileName, type, htmlContent, plainText, file) {
+    const { counts, total: totalMatches } = countKeywordMatches([plainText]);
+
+    const docxCacheEntry = {
+        html: htmlContent,
+        text: plainText,
+        fileName,
+        type,
+        _lastAccess: Date.now(),
+        _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length,
+    };
+    dropCachedDocument(id);
+    state.docContentCache[id] = docxCacheEntry;
+    state.totalCacheSize += docxCacheEntry._size;
+    evictCaches();
+    state.totalDocsFound++;
+
+    fn.renderCard(fileName, counts, id, file);
+    state.totalMatchesFound += totalMatches;
+    state.emit('stats-changed');
+
+    return docxCacheEntry;
+}
+
 export async function extractPdfText(arrayBuffer, fileName, id, file) {
     let pdf = null;
     try {
@@ -187,6 +268,22 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             createElement: (name) => (name === 'canvas' ? new OffscreenCanvas(1, 1) : null),
             fonts: {},
         };
+
+        // The same bytes extracted in an earlier session do not need pdf.js at
+        // all: hydrate the page text and recompute the counts against the
+        // current keyword list.
+        const storedKey = await cacheKey(arrayBuffer, fileName);
+        if (storedKey) {
+            const stored = await readStoredText(storedKey);
+            if (stored && stored.type === 'pdf') {
+                return cachePdfEntry(
+                    id,
+                    fileName,
+                    stored.pages.map((p) => ({ text: p.text, viewport: p.viewport || {}, items: p.items ?? null })),
+                    file,
+                );
+            }
+        }
 
         const pdfData = new Uint8Array(arrayBuffer);
         pdf = await pdfjsLib.getDocument({
@@ -220,45 +317,9 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             if (numPages > 1) dom.statusBar.textContent = 'Extracting pages: ' + p + '/' + numPages;
         }
 
-        const keywords = KEYWORDS || [];
-        const combinedRegex = getKeywordRegex(keywords);
-        const counts = {};
-        let totalMatches = 0;
-
-        if (combinedRegex) {
-            for (const pageData of pageTextData) {
-                const text = pageData.text || '';
-                let match;
-                const regex = new RegExp(combinedRegex.source, 'gi');
-                while ((match = regex.exec(text)) !== null) {
-                    const key = normalizeKeywordMatch(match, keywords);
-                    if (!key) continue;
-                    counts[key] = (counts[key] || 0) + 1;
-                    totalMatches++;
-                }
-            }
-        }
-
-        const pdfCacheEntry = {
-            totalPages: numPages,
-            pages: pageTextData,
-            fileName,
-            _lastAccess: Date.now(),
-            _size: estimatePagesSize(pageTextData) + fileName.length,
-        };
-        // A rescan of the same URL replaces the entry; drop the old one first
-        // or its size stays counted forever.
-        dropCachedDocument(id);
-        state.docTextCache[id] = pdfCacheEntry;
-        state.totalCacheSize += pdfCacheEntry._size;
-        evictCaches();
-        state.totalDocsFound++;
-
-        fn.renderCard(fileName, counts, id, file);
-        state.totalMatchesFound += totalMatches;
-        state.emit('stats-changed');
-
-        return pdfCacheEntry;
+        // Fire and forget: a storage failure must not fail the scan.
+        void storePdfText(storedKey, fileName, pageTextData);
+        return cachePdfEntry(id, fileName, pageTextData, file);
     } catch (err) {
         if (isPasswordException(err)) {
             passwordSkipped++;
@@ -282,7 +343,7 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
 
 export async function extractDocText(arrayBuffer, fileName, id, file) {
     try {
-        const type = getFileType(fileName);
+        const type = getFileType(fileName) as 'docx' | 'doc';
         let htmlContent = '';
         let plainText = '';
 
@@ -290,6 +351,16 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
             showFileError(fileName, LEGACY_DOC_MESSAGE);
             updateProgressMainThread();
             return;
+        }
+
+        // Same short-circuit as the PDF path: Mammoth is skipped entirely when
+        // an earlier session already saved this document's HTML and text.
+        const storedKey = await cacheKey(arrayBuffer, fileName);
+        if (storedKey) {
+            const stored = await readStoredText(storedKey);
+            if (stored && (stored.type === 'docx' || stored.type === 'doc')) {
+                return cacheDocxEntry(id, fileName, type, stored.html, stored.text, file);
+            }
         }
 
         if (type === 'docx') {
@@ -308,41 +379,8 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
             return;
         }
 
-        const keywords = KEYWORDS || [];
-        const combinedRegex = getKeywordRegex(keywords);
-        const counts = {};
-        let totalMatches = 0;
-        let match;
-
-        if (combinedRegex) {
-            const regex = new RegExp(combinedRegex.source, 'gi');
-            while ((match = regex.exec(plainText)) !== null) {
-                const key = normalizeKeywordMatch(match, keywords);
-                if (!key) continue;
-                counts[key] = (counts[key] || 0) + 1;
-                totalMatches++;
-            }
-        }
-
-        const docxCacheEntry = {
-            html: htmlContent,
-            text: plainText,
-            fileName,
-            type,
-            _lastAccess: Date.now(),
-            _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length,
-        };
-        dropCachedDocument(id);
-        state.docContentCache[id] = docxCacheEntry;
-        state.totalCacheSize += docxCacheEntry._size;
-        evictCaches();
-        state.totalDocsFound++;
-
-        fn.renderCard(fileName, counts, id, file);
-        state.totalMatchesFound += totalMatches;
-        state.emit('stats-changed');
-
-        return docxCacheEntry;
+        void storeDocxText(storedKey, fileName, type, htmlContent, plainText);
+        return cacheDocxEntry(id, fileName, type, htmlContent, plainText, file);
     } catch (err) {
         showFileError(fileName, 'Failed to extract document text: ' + (err.message || err));
     }
