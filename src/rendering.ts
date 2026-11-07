@@ -225,29 +225,14 @@ function renderTree(node, path = '') {
             // the counts the scan reports.
             countSpan.textContent = String(totalMatches);
 
+            // The count used to load the file and cycle its matches one at a
+            // time. Review work needs the whole set, so it now opens the
+            // results panel scoped to this document; jumping is a row click.
+            countSpan.title = 'Show every match in this document';
             countSpan.addEventListener('click', function (e) {
                 e.stopPropagation();
-
-                const onSameDoc = state.currentDocUrl === doc.url;
-
-                if (onSameDoc) {
-                    _closeMobileSidebar();
-                    if (doc.type === 'pdf') _cycleAllKeywords();
-                    else _cycleAllDocKeywords();
-                    renderResultsArea();
-                    return;
-                }
-
-                if (!onSameDoc) {
-                    _loadDocument(doc.url);
-                }
-
-                whenDocReady(doc, () => {
-                    _closeMobileSidebar();
-                    if (doc.type === 'pdf') _cycleAllKeywords();
-                    else _cycleAllDocKeywords();
-                    renderResultsArea();
-                });
+                _closeMobileSidebar();
+                fn.openResultsPanel?.(doc.url);
             });
 
             fileSpan.appendChild(countSpan);

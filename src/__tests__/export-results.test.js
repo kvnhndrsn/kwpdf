@@ -91,7 +91,16 @@ describe('buildResultRows', () => {
         const rows = forFile(buildResultRows(snapshot()), 'C.pdf');
 
         expect(rows).toEqual([
-            { file: 'C.pdf', folder: '', page: null, keyword: 'tender', count: 4, snippet: '', ocr: false },
+            {
+                file: 'C.pdf',
+                folder: '',
+                url: 'blob:c',
+                page: null,
+                keyword: 'tender',
+                count: 4,
+                snippet: '',
+                ocr: false,
+            },
         ]);
     });
 

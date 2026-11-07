@@ -179,6 +179,26 @@ test('caches extracted text and reuses it on a later import', async ({ page }) =
     await expect(page.locator('.tree-file-item', { hasText: 'one-kw.pdf' }).locator('.tree-count')).toHaveText('9');
 });
 
+test('opens the results panel from a tree count and jumps to a match', async ({ page }) => {
+    await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+
+    await page.locator('.tree-file-item', { hasText: 'one-kw.pdf' }).locator('.tree-count').click();
+
+    await expect(page.locator('#resultsPanel')).toBeVisible();
+    await expect(page.locator('#resultsPanelTitle')).toContainText('one-kw.pdf');
+    const rows = page.locator('#resultsPanelList .results-row');
+    await expect(rows.first()).toBeVisible();
+    // Scoped to the counted file, not the whole library.
+    await expect(page.locator('#resultsPanelList .results-row', { hasText: 'mixed.pdf' })).toHaveCount(0);
+
+    await rows.first().click();
+
+    await expect(page.locator('#resultsPanel')).toBeHidden();
+    await expect(page.locator('.file.active')).toContainText('one-kw.pdf', { timeout: 20_000 });
+    await expect(page.locator('div.highlight-mark.current')).toHaveCount(1, { timeout: 20_000 });
+});
+
 test('exports the scan results as CSV', async ({ page }) => {
     await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
     await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });

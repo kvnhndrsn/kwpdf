@@ -15,6 +15,8 @@ import { splitHtmlIntoPages } from './docx-engine';
 export interface ResultRow {
     file: string;
     folder: string;
+    /** Object URL of the document, so a row can be opened from the UI. */
+    url: string;
     page: number | null;
     keyword: string;
     count: number;
@@ -129,6 +131,7 @@ export function buildResultRows(snapshot: State = state): ResultRow[] {
                 rows.push({
                     file: doc.name,
                     folder: doc.folder || '',
+                    url: doc.url,
                     page: hit.page,
                     keyword,
                     count: hit.count,
@@ -143,6 +146,7 @@ export function buildResultRows(snapshot: State = state): ResultRow[] {
                 rows.push({
                     file: doc.name,
                     folder: doc.folder || '',
+                    url: doc.url,
                     page: null,
                     keyword,
                     count: ocrCount,
@@ -156,6 +160,7 @@ export function buildResultRows(snapshot: State = state): ResultRow[] {
                 rows.push({
                     file: doc.name,
                     folder: doc.folder || '',
+                    url: doc.url,
                     page: null,
                     keyword,
                     count: unattributed,
