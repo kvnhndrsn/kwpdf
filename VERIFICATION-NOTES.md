@@ -126,3 +126,11 @@ Encrypted PDFs used to reject the load with no way to supply a password (`getDoc
 - Verified: unit tests in `src/__tests__/password-prompt.test.js` (open/resolve, Enter + empty rejected, cancel, wrong-password text, a second request abandoning the first); browser — dropping `locked.pdf` opened the dialog with the filename and focused input, a wrong password produced the retry text and kept the dialog open, and the correct password decrypted the document (3 pages set up).
 - NOT verified: the unlocked document finishing its render and keyword search, because the preview tab never fires `requestAnimationFrame` and the loader parks at "Rendering first page..." (same limitation as the B6 measurement overlays). The batch case was checked separately (batch extraction does not need rAF): `locked.pdf` + `one-kw.pdf` dropped together skipped only the encrypted file with the specific note and scanned the other.
 - `ocr.ts` still loads PDFs without an `onPassword` handler, so OCR on an encrypted file fails with its generic error.
+
+## C11 — strict typechecking (first batch: pure modules)
+
+`tsconfig.json` still sets `strictNullChecks: false` and `noImplicitAny: false`, which quietly disables most of `strict`. Rather than flipping them for the whole `src/**` tree at once (411 errors once the loaders are included), `tsconfig.strict.json` extends the base config, turns `strictNullChecks`, `noImplicitAny` and `useUnknownInCatchVariables` on, and lists the files covered so far. `npm run typecheck` now runs both projects, so the covered set can only grow.
+
+- Covered: `keyword-regex`, `highlight-plan`, `canvas-budget`, `cache-size`, `pdf-coords`, `html-text` (all dependency-free, zero errors under the stricter settings).
+- Proof the config is not inert: a temporary `const x: string = null` in `html-text.ts` fails the strict project (`TS2322`), and the file was restored.
+- Still on the loose settings: everything else. Adding `pdf-loader.ts`, `file-handler.ts` and `ocr.ts` to the strict project currently yields 411 errors (measure 175, file-handler 82, pdf-search 59, ocr 52, pdf-loader 35, pdf-highlights 6, state 2), so each of those needs its own batch.

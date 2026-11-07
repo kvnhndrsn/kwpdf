@@ -1,0 +1,18 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "strict": true,
+        "strictNullChecks": true,
+        "noImplicitAny": true,
+        "useUnknownInCatchVariables": true,
+        "noEmit": true
+    },
+    "include": [
+        "src/keyword-regex.ts",
+        "src/highlight-plan.ts",
+        "src/canvas-budget.ts",
+        "src/cache-size.ts",
+        "src/pdf-coords.ts",
+        "src/html-text.ts"
+    ]
+}

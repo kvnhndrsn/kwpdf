@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "vitest bench --run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",
