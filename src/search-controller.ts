@@ -220,6 +220,22 @@ function joinedPageText(entry: PdfCacheEntry): string {
     return text;
 }
 
+/**
+ * Run the next global-search chunk.
+ *
+ * requestAnimationFrame is paused while a tab is hidden, so a global search
+ * started and then backgrounded used to stop mid-library and only finish once
+ * the user came back to the tab. Fall back to a task when the document is not
+ * visible; the chunk size keeps that from blocking input.
+ */
+function scheduleChunk(run: () => void): void {
+    if (typeof document !== 'undefined' && document.hidden) {
+        setTimeout(run, 0);
+        return;
+    }
+    requestAnimationFrame(run);
+}
+
 export function countMatchesInAllDocs(
     docDataCache: Record<string, DocDataCacheEntry>,
     docTextCache: Record<string, PdfCacheEntry>,
@@ -276,12 +292,12 @@ export function countMatchesInAllDocs(
             }
 
             if (idx < entries.length) {
-                requestAnimationFrame(processChunk);
+                scheduleChunk(processChunk);
             } else {
                 resolve({ results, totalMatches, filesWithMatches });
             }
         }
 
-        requestAnimationFrame(processChunk);
+        scheduleChunk(processChunk);
     });
 }

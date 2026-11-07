@@ -235,17 +235,41 @@ function appendOcrResults(keyword) {
     }
 }
 
+let allKeywordCache: { source: any; signature: string; results: any[] } | null = null;
+
+function allKeywordResults(): any[] {
+    const cache = state.searchCache;
+    let entries = 0;
+    let count = 0;
+    for (const [keyword, results] of Object.entries(cache)) {
+        if (keyword === '_deduplicated') continue;
+        entries++;
+        count += results.length;
+    }
+    const signature = entries + ':' + count;
+
+    // Next/prev used to re-flatten and re-sort every match on every step. The
+    // flattened list only changes when a page cache or the document does.
+    if (allKeywordCache && allKeywordCache.source === cache && allKeywordCache.signature === signature) {
+        return allKeywordCache.results;
+    }
+
+    const results = [];
+    for (const [keyword, matches] of Object.entries(cache)) {
+        if (keyword === '_deduplicated') continue;
+        for (const r of matches) {
+            results.push({ ...r, keyword });
+        }
+    }
+    results.sort((a, b) => a.page - b.page || a.y - b.y);
+    allKeywordCache = { source: cache, signature, results };
+    return results;
+}
+
 export function cycleAllKeywords() {
     if (!state.searchCache._deduplicated) return;
 
-    const allResults = [];
-    for (const [keyword, results] of Object.entries(state.searchCache)) {
-        if (keyword === '_deduplicated') continue;
-        for (const r of results) {
-            allResults.push({ ...r, keyword });
-        }
-    }
-    allResults.sort((a, b) => a.page - b.page || a.y - b.y);
+    const allResults = allKeywordResults();
 
     if (allResults.length === 0) return;
 
@@ -329,6 +353,11 @@ function showSearchResults() {
         fn.startPrerender();
         fn.goToMatch(0);
     } else {
+        // A cached query with no hits must still clear the marks painted by the
+        // previous query, otherwise they stay on the page with no result behind
+        // them.
+        clearHighlights();
+        state.searchResultsByPage = {};
         dom.navGroup.classList.remove('active');
         dom.navSep.style.display = '';
         dom.matchTotal.textContent = '0';
@@ -365,10 +394,13 @@ export function cycleSearch(query) {
             renderAllHighlights();
             fn.goToMatch(state.currentMatchIndex);
         } else {
+            clearHighlights();
+            state.searchResultsByPage = {};
             dom.navGroup.classList.remove('active');
             dom.navSep.style.display = 'none';
             dom.matchTotal.textContent = '0';
             dom.matchInput.value = '';
+            state.currentMatchIndex = -1;
             state.emit('keywords-changed');
         }
         return;

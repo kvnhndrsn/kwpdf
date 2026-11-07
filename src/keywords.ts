@@ -4,6 +4,10 @@ import { clearKeywordRegexCache, getKeywordRegex } from './keyword-regex';
 import { fn, setKeywords, setKeywordLists, setDefaultListName } from './cross';
 
 let DEFAULT_LIST_NAME = 'Central Supply-Only';
+// Set when keywords.json could not be fetched or parsed. The app keeps running
+// (documents still open) but every scan would report zero matches, which is the
+// most misleading failure a keyword scanner can have, so it is surfaced.
+let keywordLoadError: string | null = null;
 let KEYWORD_LISTS = {};
 let BUILT_IN_LISTS = [];
 let currentListName = DEFAULT_LIST_NAME;
@@ -11,6 +15,34 @@ let KEYWORDS = [];
 
 export function getKeywords() {
     return KEYWORDS;
+}
+
+export function getKeywordLoadError() {
+    return keywordLoadError;
+}
+
+/** Show or clear the persistent warning that scanning has no keyword list. */
+export function showKeywordLoadError() {
+    const banner = dom.keywordLoadError;
+    if (!banner) return;
+    if (!keywordLoadError) {
+        banner.hidden = true;
+        banner.removeAttribute('title');
+        return;
+    }
+    if (dom.keywordLoadErrorText) {
+        dom.keywordLoadErrorText.textContent = 'Keyword list failed to load — scanning is disabled';
+    }
+    banner.title = keywordLoadError;
+    banner.hidden = false;
+}
+
+async function retryKeywordLoad() {
+    await loadKeywords();
+    populateListSelector();
+    syncToBus();
+    showKeywordLoadError();
+    if (!keywordLoadError) fn.updateStats?.();
 }
 
 export function getKeywordLists() {
@@ -40,10 +72,12 @@ export async function loadKeywords() {
         currentListName = (savedList && KEYWORD_LISTS[savedList]) ? savedList : DEFAULT_LIST_NAME;
 
         KEYWORDS = KEYWORD_LISTS[currentListName] || [];
+        keywordLoadError = null;
     } catch (e) {
         console.error('Failed to load keywords.json:', e);
         KEYWORD_LISTS = {};
         KEYWORDS = [];
+        keywordLoadError = (e && e.message) ? e.message : String(e);
     }
     syncToBus();
 }
@@ -115,6 +149,20 @@ function saveKeywords() {
     localStorage.setItem('tender_keyword_list', currentListName || DEFAULT_LIST_NAME);
 }
 
+/**
+ * Keyword membership changed: per-document counts, the keyword grid and every
+ * cached scan describe the previous list. Drop the caches, clear the open
+ * document's search, and rescan the library the same way the list-change
+ * handler in index.js does.
+ */
+function refreshScansAfterKeywordChange() {
+    state.searchCache = {};
+    state.activeKeyword = '';
+    fn.clearDocQueryCache?.();
+    fn.clearSearch();
+    if (state.objectUrls.length > 0) fn.rescanAllDocuments();
+}
+
 export function populateListSelector() {
     const listSelector = dom.keywordListSelect;
     if (listSelector && KEYWORD_LISTS) {
@@ -145,20 +193,37 @@ export function populateListSelector() {
     }
 }
 
+let _keywordSelectSignature = '';
+
 export function populateKeywordSelect() {
-    dom.keywordSelect.innerHTML = '';
     const isDocx = state.currentDocType !== 'pdf';
+    const entries: Array<{ k: string; count: number }> = [];
     KEYWORDS.forEach(k => {
         const count = isDocx
             ? ((state.searchCache as any)._docCounts?.[k] || 0)
             : (state.searchCache[k]?.length || 0);
-        if ((count as number) > 0) {
-            const opt = document.createElement('option');
-            opt.value = k;
-            opt.textContent = `${k} (${count})`;
-            if (k === state.activeKeyword) opt.selected = true;
-            dom.keywordSelect.appendChild(opt);
+        if ((count as number) > 0) entries.push({ k, count: count as number });
+    });
+
+    // Navigation emits `keywords-changed` on every match step. Rebuilding the
+    // options (and the custom dropdown's menu) for the same list was pure DOM
+    // churn; only the selection actually moves.
+    const signature = entries.map(e => e.k + '\u0000' + e.count).join('\u0001');
+    if (signature === _keywordSelectSignature && dom.keywordSelect.options.length === entries.length) {
+        for (const opt of Array.from(dom.keywordSelect.options)) {
+            opt.selected = opt.value === state.activeKeyword;
         }
+        return;
+    }
+    _keywordSelectSignature = signature;
+
+    dom.keywordSelect.innerHTML = '';
+    entries.forEach(({ k, count }) => {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = `${k} (${count})`;
+        if (k === state.activeKeyword) opt.selected = true;
+        dom.keywordSelect.appendChild(opt);
     });
 }
 
@@ -347,7 +412,14 @@ function deleteCurrentList() {
     if (!confirm(`Delete list "${listName}"?`)) return;
     deleteList(listName);
     populateListSelector();
+    // Deleting the active list leaves KEYWORDS pointing at the deleted array;
+    // move to the list the selector fell back to before rescanning.
+    if (listName === currentListName) {
+        const next = dom.kwListSelector ? dom.kwListSelector.value : '';
+        if (next && KEYWORD_LISTS[next]) switchKeywordList(next);
+    }
     loadListIntoEditor();
+    refreshScansAfterKeywordChange();
 }
 
 function saveCurrentList() {
@@ -363,9 +435,7 @@ function saveCurrentList() {
     switchKeywordList(listName);
 
     toggleKeywordManager();
-    if (typeof fn._performSearch === 'function') {
-        fn._performSearch();
-    }
+    refreshScansAfterKeywordChange();
 }
 
 function exportKeywords() {
@@ -434,6 +504,7 @@ function importKeywords() {
                 createList(listName, words);
                 switchKeywordList(listName);
                 populateListSelector();
+                refreshScansAfterKeywordChange();
 
                 alert(`Imported "${listName}" with ${words.length} keywords.`);
             } catch (err) {
@@ -454,6 +525,7 @@ export function setupKeywordManager() {
     dom.kwImportBtn?.addEventListener('click', importKeywords);
     dom.kwCancelBtn?.addEventListener('click', toggleKeywordManager);
     dom.kwSaveBtn?.addEventListener('click', saveCurrentList);
+    dom.keywordRetryBtn?.addEventListener('click', retryKeywordLoad);
     dom.hideNewListBtn?.addEventListener('click', hideNewListDialog);
     dom.createNewListBtn?.addEventListener('click', createNewList);
     dom.newListName?.addEventListener('keydown', (e) => {

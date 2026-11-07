@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from '../search-controller';
 
@@ -280,6 +281,67 @@ describe('searchTextPages query memo', () => {
         expect(searchTextPages(cache, 1, 'hello')).toHaveLength(1);
         expect(searchTextPages(cache, 1, 'world')).toHaveLength(1);
         expect(searchTextPages(cache, 1, 'hello')[0].startIndex).toBe(0);
+    });
+});
+
+describe('countMatchesInAllDocs scheduling', () => {
+    function library(count) {
+        const docDataCache = {};
+        const docTextCache = {};
+        for (let i = 0; i < count; i++) {
+            const url = 'blob:' + i;
+            docDataCache[url] = { type: 'pdf' };
+            docTextCache[url] = {
+                totalPages: 1,
+                pages: [{ text: 'alpha beta' }],
+                fileName: 'f' + i,
+                _lastAccess: 0,
+                _size: 0,
+            };
+        }
+        return { docDataCache, docTextCache };
+    }
+
+    it('completes when requestAnimationFrame never runs (hidden tab)', async () => {
+        const realRaf = globalThis.requestAnimationFrame;
+        const realHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+        // A hidden tab pauses requestAnimationFrame; the chunk loop has to fall
+        // back to a task or the search never finishes.
+        globalThis.requestAnimationFrame = () => 0;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+
+        try {
+            const { docDataCache, docTextCache } = library(60);
+            const counts = await countMatchesInAllDocs(
+                docDataCache, docTextCache, {}, 'alpha', { cancelled: false },
+            );
+
+            expect(counts).not.toBeNull();
+            expect(counts.totalMatches).toBe(60);
+            expect(counts.filesWithMatches).toBe(60);
+        } finally {
+            globalThis.requestAnimationFrame = realRaf;
+            if (realHidden) Object.defineProperty(document, 'hidden', realHidden);
+            else delete document.hidden;
+        }
+    });
+
+    it('still reports cancellation while backgrounded', async () => {
+        const realRaf = globalThis.requestAnimationFrame;
+        const realHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+        globalThis.requestAnimationFrame = () => 0;
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+
+        try {
+            const { docDataCache, docTextCache } = library(60);
+            const cancelRef = { cancelled: true };
+            const counts = await countMatchesInAllDocs(docDataCache, docTextCache, {}, 'alpha', cancelRef);
+            expect(counts).toBeNull();
+        } finally {
+            globalThis.requestAnimationFrame = realRaf;
+            if (realHidden) Object.defineProperty(document, 'hidden', realHidden);
+            else delete document.hidden;
+        }
     });
 });
 

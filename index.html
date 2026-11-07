@@ -44,6 +44,10 @@
             </div>
         </div>
         <div class="status-bar" id="statusBar" aria-live="polite"></div>
+        <div class="keyword-load-error" id="keywordLoadError" role="alert" hidden>
+            <span id="keywordLoadErrorText">Keyword list failed to load — scanning is disabled</span>
+            <button type="button" class="keyword-retry-btn" id="keywordRetryBtn">Retry</button>
+        </div>
         <div id="progressBar"><div id="progressBarFill"></div></div>
     </div>
 

@@ -61,16 +61,27 @@ describe('getKeywordRegex', () => {
 });
 
 describe('normalizeKeywordMatch', () => {
-    it('returns null for matches shorter than 3 characters', () => {
-        expect(normalizeKeywordMatch(['ab'])).toBeNull();
-        expect(normalizeKeywordMatch(['a'])).toBeNull();
+    it('keeps short keywords', () => {
+        // A two-letter abbreviation is a normal tender keyword ("AI", "QC",
+        // "RFI"); dropping it made the tool report no matches for text that
+        // was plainly on the page.
+        expect(normalizeKeywordMatch(['ab'])).toBe('ab');
+        expect(normalizeKeywordMatch(['a'])).toBe('a');
     });
 
-    it('returns null for non-alpha matches', () => {
-        expect(normalizeKeywordMatch(['123'])).toBeNull();
-        expect(normalizeKeywordMatch(['!!!'])).toBeNull();
-        // '1a2' contains a letter so it is valid
+    it('keeps numeric keywords', () => {
+        expect(normalizeKeywordMatch(['123'])).toBe('123');
+        expect(normalizeKeywordMatch(['4500'])).toBe('4500');
         expect(normalizeKeywordMatch(['1a2'])).toBe('1a2');
+    });
+
+    it('still ignores an empty match', () => {
+        expect(normalizeKeywordMatch([''])).toBeNull();
+    });
+
+    it('resolves short keywords through the canonical list', () => {
+        expect(normalizeKeywordMatch(['AI'], ['ai', 'geotextile'])).toBe('ai');
+        expect(normalizeKeywordMatch(['4500'], new Map([['4500', '4500']]))).toBe('4500');
     });
 
     it('lowercases the match when no keywords provided', () => {
@@ -94,6 +105,38 @@ describe('normalizeKeywordMatch', () => {
         const map = new Map([['foo', 'FooBar'], ['bar', 'BarBaz']]);
         expect(normalizeKeywordMatch(['foo'], map)).toBe('FooBar');
         expect(normalizeKeywordMatch(['baz'], map)).toBe('baz');
+    });
+});
+
+describe('keyword list normalization', () => {
+    it('drops blank entries instead of matching everything', () => {
+        clearKeywordRegexCache();
+        const re = getKeywordRegex(['', '   ', 'geotextile']);
+        expect(re).toBeInstanceOf(RegExp);
+        expect(re.source).toBe('\\b(geotextile)\\b');
+
+        // A zero-length alternative used to match at every word boundary and
+        // never advance lastIndex, hanging this loop.
+        let count = 0;
+        let m;
+        while ((m = re.exec('geotextile and geotextile')) !== null) count++;
+        expect(count).toBe(2);
+    });
+
+    it('returns null when every entry is blank', () => {
+        clearKeywordRegexCache();
+        expect(getKeywordRegex(['', ' '])).toBeNull();
+    });
+
+    it('collapses case-insensitive duplicates, keeping the first spelling', () => {
+        clearKeywordRegexCache();
+        const re = getKeywordRegex(['Geotextile', 'geotextile', '  geotextile  ']);
+        expect(re.source).toBe('\\b(Geotextile)\\b');
+        expect(normalizeKeywordMatch(['GEOTEXTILE'], ['Geotextile', 'geotextile'])).toBe('Geotextile');
+    });
+
+    it('resolves a canonical spelling through surrounding whitespace', () => {
+        expect(normalizeKeywordMatch(['foo'], ['  Foo  '])).toBe('Foo');
     });
 });
 

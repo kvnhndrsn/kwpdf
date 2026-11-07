@@ -47,6 +47,12 @@ let _observerTimer = null;
 let _scrollTimer = null;
 let _isScrolling = false;
 const MAX_CONCURRENT_RENDERS = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 6));
+// Pages whose geometry is resolved per batch during document setup.
+const VIRTUAL_PAGE_CHUNK = 50;
+// Only render match pages this close to the current page up front.
+const PRERENDER_RADIUS = 5;
+// Drop canvases/text layers for pages this far from the current page.
+const EVICT_RADIUS = 30;
 
 function promiseMapConcurrent(items, fn, concurrency) {
     const results = [];
@@ -109,36 +115,50 @@ export async function setupVirtualPages() {
 
     teardownTextLayers();
 
-    const pagePromises = [];
-    for (let i = 1; i <= state.totalPages; i++) {
-        pagePromises.push(state.pdfDoc.getPage(i).catch(() => null));
-    }
-    const pages = await Promise.all(pagePromises);
+    const generation = state.docGeneration;
 
-    for (let i = 0; i < pages.length; i++) {
-        const pageNum = i + 1;
-        const page = pages[i];
-        if (!page) {
-            state.pageHeights[pageNum] = 800;
+    // Resolve page geometry in chunks, inserting each chunk as it arrives.
+    // Requesting every page at once and awaiting the whole batch left the viewer
+    // blank until the last page resolved, and held N page proxies live.
+    for (let start = 1; start <= state.totalPages; start += VIRTUAL_PAGE_CHUNK) {
+        const end = Math.min(start + VIRTUAL_PAGE_CHUNK - 1, state.totalPages);
+        const pages = await Promise.all(
+            Array.from({ length: end - start + 1 }, (_, i) =>
+                state.pdfDoc.getPage(start + i).catch(() => null))
+        );
+        if (!isCurrentGeneration(generation)) return;
+
+        for (let i = 0; i < pages.length; i++) {
+            const pageNum = start + i;
+            const page = pages[i];
+            if (!page) {
+                state.pageHeights[pageNum] = 800;
+                const placeholder = document.createElement('div');
+                placeholder.className = 'page-placeholder';
+                placeholder.id = 'page-' + pageNum;
+                placeholder.dataset.pageNum = String(pageNum);
+                placeholder.style.setProperty('--base-w', '600');
+                placeholder.style.setProperty('--base-h', '800');
+                dom.viewer.appendChild(placeholder);
+                continue;
+            }
+            const viewport = page.getViewport({ scale: 1.0 });
+            state.pageHeights[pageNum] = viewport.height;
+
             const placeholder = document.createElement('div');
             placeholder.className = 'page-placeholder';
             placeholder.id = 'page-' + pageNum;
             placeholder.dataset.pageNum = String(pageNum);
-            placeholder.style.setProperty('--base-w', '600');
-            placeholder.style.setProperty('--base-h', '800');
+            placeholder.style.setProperty('--base-w', viewport.width);
+            placeholder.style.setProperty('--base-h', viewport.height);
             dom.viewer.appendChild(placeholder);
-            continue;
         }
-        const viewport = page.getViewport({ scale: 1.0 });
-        state.pageHeights[pageNum] = viewport.height;
 
-        const placeholder = document.createElement('div');
-        placeholder.className = 'page-placeholder';
-        placeholder.id = 'page-' + pageNum;
-        placeholder.dataset.pageNum = String(pageNum);
-        placeholder.style.setProperty('--base-w', viewport.width);
-        placeholder.style.setProperty('--base-h', viewport.height);
-        dom.viewer.appendChild(placeholder);
+        // Let the browser paint the pages mounted so far before resolving the
+        // next batch, instead of blocking the first visible page behind all of them.
+        if (end < state.totalPages) {
+            await new Promise(r => requestAnimationFrame(() => r(null)));
+        }
     }
 
     setupPageObserver();
@@ -252,6 +272,39 @@ function cancelAllRenders() {
     state.renderTasks.clear();
 }
 
+/**
+ * Release canvases and selection layers for pages far outside the viewport.
+ * Without this, every page ever visited kept its canvas for the life of the
+ * document, so memory grew with pages read rather than pages on screen.
+ * Page geometry (`pageHeights`) is kept, so scroll math does not change and the
+ * page re-renders when it comes back into range.
+ */
+function evictDistantPages(keep: Set<number>) {
+    if (!state.pdfDoc) return;
+
+    const current = state.searchResults[state.currentMatchIndex];
+    if (current) keep.add(current.page);
+
+    for (const pageNum of [...state.renderedPages]) {
+        if (keep.has(pageNum)) continue;
+        const el = document.getElementById('page-' + pageNum);
+        if (!el) continue;
+        if (!el.querySelector('canvas')) continue;
+
+        const layerRef = textLayers.get(pageNum);
+        if (layerRef) {
+            try { layerRef.layer.cancel(); } catch (e) {}
+            textLayers.delete(pageNum);
+        }
+        el.querySelector('.textLayer')?.remove();
+        el.innerHTML = '';
+        el.className = 'page-placeholder';
+
+        state.renderedPages.delete(pageNum);
+        delete state.renderedScales[pageNum];
+    }
+}
+
 // ── the single coordinator ──
 
 async function refreshVisiblePages() {
@@ -289,6 +342,14 @@ async function refreshVisiblePages() {
     if (toRender.length) {
         await promiseMapConcurrent(toRender, p => renderPageNow(p.pn).catch(() => {}), Math.min(2, MAX_CONCURRENT_RENDERS));
     }
+
+    // Keep visible pages plus a generous neighbourhood; the rest are re-rendered
+    // on demand when scrolled back to.
+    const keep = new Set<number>(visibleSet);
+    for (let p = state.currentPage - EVICT_RADIUS; p <= state.currentPage + EVICT_RADIUS; p++) {
+        if (p >= 1 && p <= state.totalPages) keep.add(p);
+    }
+    evictDistantPages(keep);
 
     scheduleIdle(() => prerenderNearPages(), 300);
 } finally {
@@ -374,7 +435,6 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
 
         const renderTask = page.render({ canvasContext: ctx, viewport: viewport });
         state.renderTasks.set(pageNum, renderTask);
-
         await renderTask.promise;
 
         if (!isCurrentGeneration(generation)) return;
@@ -687,8 +747,16 @@ export function startPrerender() {
     if (state.searchResults.length === 0) return;
     if (_rendering) return;
 
-    const pagesWithMatches = [...new Set(state.searchResults.map(r => r.page))];
-    const toRender = pagesWithMatches.filter(pn => pageNeedsRender(pn));
+    // A common keyword can hit hundreds of pages. Rasterising all of them up
+    // front was the biggest CPU/canvas spike during search; only the current
+    // page's neighbourhood is worth pre-rendering, the rest arrives on navigate.
+    const pagesWithMatches = new Set<number>();
+    for (const r of state.searchResults) {
+        if (Math.abs(r.page - state.currentPage) <= PRERENDER_RADIUS) {
+            pagesWithMatches.add(r.page);
+        }
+    }
+    const toRender = [...pagesWithMatches].filter(pn => pageNeedsRender(pn));
     if (toRender.length === 0) return;
 
     scheduleIdle(() => {

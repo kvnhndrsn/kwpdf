@@ -1,6 +1,6 @@
 import { state } from './state';
 import * as dom from './dom';
-import { fn, pdfjsLib, KEYWORDS } from './cross';
+import { fn, pdfjsLib, KEYWORDS, basePath } from './cross';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 
 let ocrEnabled = true;
@@ -16,6 +16,11 @@ const RENDER_TIMEOUT_MS = 30_000;
 const HIGHLIGHT_PAD = 3;
 
 let ocrTotalPages = 0;
+
+// Bumped by resetOcrState(). A run captures the value when it starts and stops
+// dispatching as soon as it no longer matches, so a cleared library cannot keep
+// OCR'ing pages (and holding 60s timers) against revoked object URLs.
+let ocrResetEpoch = 0;
 
 export function isOcrEnabled() {
     return ocrEnabled;
@@ -36,9 +41,24 @@ export function initOcr() {
     ocrEnabled = stored === null ? true : stored === 'true';
 }
 
-/** Drop every per-file OCR result. Used when all documents are cleared, so
- *  results keyed by revoked object URLs cannot leak into a later session. */
+/** Stop in-flight OCR and drop every per-file result. Used when all documents
+ *  are cleared, so workers cannot keep recognising pages behind revoked object
+ *  URLs and results keyed by them cannot leak into a later session. */
 export function resetOcrState() {
+    ocrResetEpoch++;
+
+    for (const slot of workerSlots) {
+        try { slot.worker.terminate(); } catch (e) { /* already gone */ }
+    }
+    workerSlots.length = 0;
+
+    // Settle every outstanding page promise rather than leaving its run to
+    // unwind on a 60s timeout.
+    for (const [, cb] of workerCallbacks) {
+        cb.reject(new Error('OCR reset'));
+    }
+    workerCallbacks.clear();
+
     ocrFileState.clear();
     ocrTotalPages = 0;
 }
@@ -211,6 +231,7 @@ async function startOcrForFile(url) {
     }
 
     initWorkerPool();
+    const resetEpoch = ocrResetEpoch;
 
     const fileName = cacheEntry.fileName || 'document';
 
@@ -222,7 +243,13 @@ async function startOcrForFile(url) {
             const response = await fetch(url);
             const arrayBuffer = await response.arrayBuffer();
             const pdfData = new Uint8Array(arrayBuffer);
-            pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
+            pdfDoc = await pdfjsLib.getDocument({
+                data: pdfData,
+                cMapUrl: basePath + 'cmaps/',
+                cMapPacked: true,
+                standardFontDataUrl: basePath + 'standard_fonts/',
+                isEvalSupported: false,
+            }).promise;
         }
     } catch (err) {
         console.error('[OCR] Failed to load PDF for OCR:', err);
@@ -256,6 +283,11 @@ async function startOcrForFile(url) {
         }
 
         function dispatchNext(slot) {
+            if (resetEpoch !== ocrResetEpoch) {
+                resolve();
+                return;
+            }
+
             const pageNum = nextPage++;
             if (pageNum > totalToProcess) {
                 checkCompletion();
@@ -264,6 +296,10 @@ async function startOcrForFile(url) {
 
             processPageOnWorker(pdfDoc, pageNum, url, fileName, slot)
                 .then(result => {
+                    if (resetEpoch !== ocrResetEpoch) {
+                        resolve();
+                        return;
+                    }
                     if (result) {
                         pageWordData[pageNum - 1] = {
                             words: result.words,
@@ -280,6 +316,10 @@ async function startOcrForFile(url) {
                     dispatchNext(slot);
                 })
                 .catch(() => {
+                    if (resetEpoch !== ocrResetEpoch) {
+                        resolve();
+                        return;
+                    }
                     pageWordData[pageNum - 1] = null;
                     completed++;
                     dom.progressBar.style.width = Math.round((completed / totalToProcess) * 100) + '%';
@@ -291,6 +331,10 @@ async function startOcrForFile(url) {
     });
 
     clearInterval(globalPulse);
+
+    // Reset while this run was in flight: the pool now belongs to whoever comes
+    // next, so leave it alone and publish nothing.
+    if (resetEpoch !== ocrResetEpoch) return;
 
     for (const slot of workerSlots) {
         try { slot.worker.terminate(); } catch (e) { /* ignore */ }
@@ -338,8 +382,9 @@ async function startOcrForFile(url) {
         const wordRegex = new RegExp(combinedRegex.source, 'gi');
         for (const word of (pageData.words || [])) {
             const wordText = (word.text || '').trim();
-            if (wordText.length < 3) continue;
-            if (!/[a-zA-Z]/.test(wordText)) continue;
+            // Same rule as normalizeKeywordMatch: short and numeric keywords
+            // ("AI", "QC", "4500") are valid, so do not filter them out here.
+            if (!wordText) continue;
 
             wordRegex.lastIndex = 0;
             let m;

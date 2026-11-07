@@ -1,6 +1,6 @@
 import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } from './state';
 import * as dom from './dom';
-import { fn, pdfjsLib } from './cross';
+import { fn, pdfjsLib, basePath } from './cross';
 import { evictCaches } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
 import { processTextContent, processTextContentAsync } from './pdf-search';
@@ -69,7 +69,16 @@ function loadPDF(fileUrl, keyword = '') {
 
     (async () => {
         try {
-            const loadingTask = pdfjsLib.getDocument(fileUrl);
+            // CMaps and standard font data ship with the build: without them
+            // CJK text and non-embedded standard fonts render as missing
+            // glyphs. isEvalSupported is off so no PDF can reach `new Function`.
+            const loadingTask = pdfjsLib.getDocument({
+                url: fileUrl,
+                cMapUrl: basePath + 'cmaps/',
+                cMapPacked: true,
+                standardFontDataUrl: basePath + 'standard_fonts/',
+                isEvalSupported: false,
+            });
             const doc = await loadingTask.promise;
 
             if (!isCurrentGeneration(generation)) {
@@ -99,6 +108,7 @@ function loadPDF(fileUrl, keyword = '') {
             if (cached && cached.pages && cached.pages.length > 0 && !cached.pages[0]?.viewport?.transform) {
                 // Cache written by an older/other extraction path (no viewport
                 // transform → wrong coords for rotated/offset-box pages). Rebuild.
+                state.totalCacheSize -= cached._size || 0;
                 delete state.docTextCache[fileUrl];
                 cached = null;
             }
@@ -194,6 +204,9 @@ function loadPDF(fileUrl, keyword = '') {
                 if (state.docDataCache[fileUrl]) {
                     state.docDataCache[fileUrl].counts = counts;
                 }
+                // Single-document loads never go through the batch counter path,
+                // so refresh the derived totals once the counts exist.
+                state.emit('stats-changed');
             }
 
             // Auto-detect measurement scale from embedded metadata or page text

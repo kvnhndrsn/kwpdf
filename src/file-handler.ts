@@ -3,7 +3,8 @@ import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { processTextContentAsync } from './pdf-search';
 import { estimatePagesSize, estimateTextEntrySize } from './cache-size';
-import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS } from './cross';
+import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS, basePath } from './cross';
+import { htmlToText } from './html-text';
 
 export function getFileType(filename) {
     const lower = filename.toLowerCase();
@@ -92,6 +93,7 @@ export function evictCaches() {
 }
 
 export async function extractPdfText(arrayBuffer, fileName, id, file) {
+    let pdf = null;
     try {
         const fakeDoc = {
             createElement: name => name === 'canvas' ? new OffscreenCanvas(1, 1) : null,
@@ -99,7 +101,14 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
         };
 
         const pdfData = new Uint8Array(arrayBuffer);
-        const pdf = await pdfjsLib.getDocument({ data: pdfData, ownerDocument: fakeDoc }).promise;
+        pdf = await pdfjsLib.getDocument({
+            data: pdfData,
+            ownerDocument: fakeDoc,
+            cMapUrl: basePath + 'cmaps/',
+            cMapPacked: true,
+            standardFontDataUrl: basePath + 'standard_fonts/',
+            isEvalSupported: false,
+        }).promise;
         const numPages = pdf.numPages;
         const pageTextData = [];
 
@@ -161,6 +170,13 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
         return pdfCacheEntry;
     } catch (err) {
         showFileError(fileName, 'Failed to extract PDF text: ' + (err.message || err));
+    } finally {
+        // Batch extraction never hands the document to state.pdfDoc, so nothing
+        // else would release this loading task's worker and page caches; left
+        // alone, every scanned PDF leaks one for the life of the tab.
+        if (pdf) {
+            try { await pdf.destroy(); } catch (e) { /* already torn down */ }
+        }
     }
 }
 
@@ -173,8 +189,11 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
         if (type === 'docx' || type === 'doc') {
             const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
             htmlContent = htmlResult.value;
-            const textResult = await mammoth.extractRawText({ arrayBuffer });
-            plainText = textResult.value.replace(/\s+/g, ' ').trim();
+            // Derive the searchable text from the HTML we already have instead
+            // of unzipping and parsing the same document a second time. Page
+            // text and the searched string now share one normalizer, so the page
+            // offset table lines up exactly.
+            plainText = htmlToText(htmlContent);
         }
 
         if (!plainText && !htmlContent) {
@@ -305,6 +324,20 @@ async function processFiles(files) {
                     const idx = state.objectUrls.indexOf(url);
                     if (idx !== -1) state.objectUrls.splice(idx, 1);
                     URL.revokeObjectURL(url);
+                    // Drop the failed entry from every cache too: a placeholder
+                    // card or a dead-URL text entry would otherwise stay in the
+                    // tree and in the running cache total for good.
+                    const textEntry = state.docTextCache[url];
+                    if (textEntry) {
+                        state.totalCacheSize -= textEntry._size || 0;
+                        delete state.docTextCache[url];
+                    }
+                    const contentEntry = state.docContentCache[url];
+                    if (contentEntry) {
+                        state.totalCacheSize -= contentEntry._size || 0;
+                        delete state.docContentCache[url];
+                    }
+                    delete state.docDataCache[url];
                     failedCount++;
                 }
                 updateProgressMainThread();
@@ -350,7 +383,7 @@ export async function handleDrop(e) {
                 } catch (err) {
                     showFileError(entry.name, 'Failed to read zip file: ' + (err.message || err));
                 }
-            } else {
+            } else if (entry.isDirectory) {
                 dom.statusBar.textContent = 'Reading folder "' + entry.name + '"...';
                 dom.progressBar.style.width = '0%';
                 try {
@@ -358,6 +391,15 @@ export async function handleDrop(e) {
                     state.basePath = entry.name;
                 } catch (err) {
                     showFileError(entry.name, 'Failed to read folder: ' + (err.message || err));
+                }
+            } else {
+                // A lone file establishes no folder. Treating it as one named the
+                // phantom root after the file, which corrupted every fullPath
+                // (and therefore every measurement key) derived from it.
+                try {
+                    await traverseFileTree(entry, filesToProcess, '');
+                } catch (err) {
+                    showFileError(entry.name, 'Failed to read file: ' + (err.message || err));
                 }
             }
         }
@@ -533,6 +575,18 @@ export function initFileHandler() {
     });
 }
 
+const RESCAN_CONCURRENCY = 4;
+
+async function mapConcurrent<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
+    let next = 0;
+    const lanes = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+        while (next < items.length) {
+            await run(items[next++]);
+        }
+    });
+    await Promise.all(lanes);
+}
+
 export async function rescanAllDocuments() {
     const viewerMsg = document.getElementById('viewerDropMsg');
     if (viewerMsg) viewerMsg.style.display = 'none';
@@ -553,9 +607,10 @@ export async function rescanAllDocuments() {
     state.workerPool.cancelStale(state.docGeneration);
     const keywords = KEYWORDS || [];
     let failedCount = 0;
+    let cancelled = false;
 
-    for (let i = 0; i < state.objectUrls.length; i++) {
-        const url = state.objectUrls[i];
+    const scanOne = async ({ url, i }: { url: string; i: number }) => {
+        if (cancelled) return;
         const pdfCached = state.docTextCache[url];
 
         if (pdfCached) {
@@ -576,7 +631,7 @@ export async function rescanAllDocuments() {
             } catch (err) {
                 // A cancelled scan is not a failed document: stop without
                 // reporting an error for work the user abandoned.
-                if (err instanceof CancelledTaskError) return;
+                if (err instanceof CancelledTaskError) { cancelled = true; return; }
                 const name = pdfCached.fileName || url.split('/').pop();
                 showFileError(name, 'Rescan PDF worker error: ' + (err.message || err));
                 failedCount++;
@@ -599,7 +654,7 @@ export async function rescanAllDocuments() {
                         fn.renderNoMatchCard(displayName, url);
                     }
                 } catch (err) {
-                    if (err instanceof CancelledTaskError) return;
+                    if (err instanceof CancelledTaskError) { cancelled = true; return; }
                     const name = docCached.fileName || url.split('/').pop();
                     showFileError(name, 'Rescan DOCX worker error: ' + (err.message || err));
                     failedCount++;
@@ -607,10 +662,26 @@ export async function rescanAllDocuments() {
             }
         }
 
+        if (cancelled) return;
         state.processed++;
-        const pct = Math.round(((i + 1) / state.objectUrls.length) * 100);
-        dom.progressBar.style.width = pct + '%';
+        dom.progressBar.style.width = Math.round((state.processed / state.objectUrls.length) * 100) + '%';
+    };
+
+    // Documents used to be awaited one at a time and the tree rebuilt per
+    // document. The pool runs several scans at once; the batch keeps the tree at
+    // one rebuild while that happens.
+    fn.beginResultsBatch();
+    try {
+        await mapConcurrent(
+            state.objectUrls.map((url, i) => ({ url, i })),
+            RESCAN_CONCURRENCY,
+            scanOne
+        );
+    } finally {
+        fn.endResultsBatch();
     }
+
+    if (cancelled) return;
 
     state.emit('stats-changed');
 

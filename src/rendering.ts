@@ -5,43 +5,6 @@ import { getFileIcon, getFileType } from './file-handler';
 
 let _loadDocument, _cycleSearch, _cycleDocSearch, _cycleAllKeywords, _cycleAllDocKeywords, _closeMobileSidebar;
 
-let _pulseInterval = null;
-let _pulseTick = 0;
-let _pulseStopTimer = null;
-
-function applyPulseStyle() {
-    const phase = Math.sin(_pulseTick * 0.1);
-    const opacity = 0.3 + (phase * 0.5 + 0.5) * 0.7;
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    document.documentElement.style.setProperty('--pulse-color', isLight ? '#000' : '#fff');
-    document.documentElement.style.setProperty('--pulse-opacity', String(opacity));
-}
-
-function syncOcrPulse() {
-    if (_pulseStopTimer) {
-        clearTimeout(_pulseStopTimer);
-        _pulseStopTimer = null;
-    }
-    if (!_pulseInterval) {
-        applyPulseStyle();
-        _pulseInterval = setInterval(() => {
-            _pulseTick++;
-            applyPulseStyle();
-            if (document.querySelectorAll('.ocr-pulsing').length === 0) {
-                if (!_pulseStopTimer) {
-                    _pulseStopTimer = setTimeout(() => {
-                        _pulseStopTimer = null;
-                        if (document.querySelectorAll('.ocr-pulsing').length === 0) {
-                            clearInterval(_pulseInterval);
-                            _pulseInterval = null;
-                        }
-                    }, 500);
-                }
-            }
-        }, 50);
-    }
-}
-
 export function setCallbacks(cbs) {
     _loadDocument = cbs.loadDocument;
     _cycleSearch = cbs.cycleSearch;
@@ -146,7 +109,15 @@ function renderTree(node, path = '') {
         const li = document.createElement('li');
         const folderSpan = document.createElement('span');
         folderSpan.className = 'folder open';
-        folderSpan.innerHTML = '<img src="icons/folder.svg" width="16" height="16" alt="folder"> ' + name;
+        // Folder names come from dropped files, so they are untrusted: build
+        // the icon and label as nodes instead of interpolating into innerHTML.
+        const folderIcon = document.createElement('img');
+        folderIcon.src = 'icons/folder.svg';
+        folderIcon.width = 16;
+        folderIcon.height = 16;
+        folderIcon.alt = 'folder';
+        folderSpan.appendChild(folderIcon);
+        folderSpan.appendChild(document.createTextNode(' ' + name));
         folderSpan.addEventListener('click', function(e) {
             e.stopPropagation();
             this.classList.toggle('open');
@@ -183,7 +154,6 @@ function renderTree(node, path = '') {
                 ocrBtn.textContent = 'OCR';
                 ocrBtn.title = 'OCR in progress...';
                 fileSpan.appendChild(ocrBtn);
-                syncOcrPulse();
             }
         }
 
@@ -406,10 +376,18 @@ export function updateStats() {
         return;
     }
 
-    if (state.totalMatchesFound > 0) {
-        dom.statusBar.textContent = `${state.totalMatchesFound} matches across ${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''}`;
-    } else if (state.totalDocsFound > 0) {
-        dom.statusBar.textContent = `${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''} scanned`;
+    // Derive the totals from the index rather than the incrementally maintained
+    // counters: a single-document load never updated them, so the status bar
+    // reported "0 matches across 0 documents" after a one-file drop.
+    const docs = Object.values(state.docDataCache);
+    let matches = 0;
+    for (const doc of docs) {
+        for (const n of Object.values(doc.counts || {})) matches += n as number;
+    }
+    if (matches > 0) {
+        dom.statusBar.textContent = `${matches} matches across ${docs.length} document${docs.length !== 1 ? 's' : ''}`;
+    } else if (docs.length > 0) {
+        dom.statusBar.textContent = `${docs.length} document${docs.length !== 1 ? 's' : ''} scanned`;
     }
 }
 
@@ -491,9 +469,7 @@ export function updateKeywordGrid(url) {
     if (ocrBtn) {
         if (fn.isOcrEnabled() && doc.type === 'pdf') {
             const ocrState = fn.getOcrState(url);
-            const wasPulsing = ocrBtn.classList.contains('ocr-pulsing');
             ocrBtn.className = 'kw-ocr-btn' + (ocrState && ocrState.status === 'done' ? ' active' : ocrState && ocrState.status === 'processing' ? ' ocr-pulsing' : '');
-            if (ocrState && ocrState.status === 'processing' && !wasPulsing) syncOcrPulse();
             ocrBtn.textContent = ocrState && ocrState.status === 'done' ? 'OCR\u2713' : 'OCR';
             ocrBtn.title = 'Run OCR on this file';
             ocrBtn.style.display = '';
@@ -504,7 +480,7 @@ export function updateKeywordGrid(url) {
     }
 
     const keywords = KEYWORDS || [];
-    const cells = [];
+    const cells: HTMLElement[] = [];
 
     let akwCurrentKeyword = '';
     let akwKeywordLocalIndex = -1;
@@ -525,39 +501,50 @@ export function updateKeywordGrid(url) {
 
     keywords.forEach(k => {
         const count = doc.counts[k] || 0;
-        if (count > 0) {
-            let isActive = k === state.activeKeyword;
-            let countText = String(count);
-            if (state.allKeywordMode && state.currentMatchIndex >= 0) {
-                isActive = k === akwCurrentKeyword;
-                if (isActive) countText = `${akwKeywordLocalIndex}/${akwKeywordTotal}`;
-            } else if (isActive && state.currentMatchIndex >= 0) {
-                countText = `${state.currentMatchIndex + 1}/${count}`;
-            }
-            cells.push(`<div class="kw-grid-cell${isActive ? ' active' : ''}" data-keyword="${k}" data-count="${count}">
-                <span class="kw-cell-name">${k}</span>
-                <span class="kw-cell-count">${countText}</span>
-            </div>`);
+        if (count <= 0) return;
+
+        let isActive = k === state.activeKeyword;
+        let countText = String(count);
+        if (state.allKeywordMode && state.currentMatchIndex >= 0) {
+            isActive = k === akwCurrentKeyword;
+            if (isActive) countText = `${akwKeywordLocalIndex}/${akwKeywordTotal}`;
+        } else if (isActive && state.currentMatchIndex >= 0) {
+            countText = `${state.currentMatchIndex + 1}/${count}`;
         }
+
+        // Keywords are user-editable, so never interpolate them into HTML: a
+        // quote or a tag would break out of the attribute or the cell.
+        const cell = document.createElement('div');
+        cell.className = 'kw-grid-cell' + (isActive ? ' active' : '');
+        cell.dataset.keyword = k;
+        cell.dataset.count = String(count);
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'kw-cell-name';
+        nameEl.textContent = k;
+
+        const countEl = document.createElement('span');
+        countEl.className = 'kw-cell-count';
+        countEl.textContent = countText;
+
+        cell.append(nameEl, countEl);
+        cell.addEventListener('click', () => {
+            state.allKeywordMode = false;
+            _closeMobileSidebar();
+            if (state.currentDocUrl === url) {
+                if (doc?.type === 'pdf') _cycleSearch(k);
+                else _cycleDocSearch(k);
+            } else {
+                _loadDocument(url, k);
+            }
+        });
+        cells.push(cell);
     });
 
     if (cells.length === 0) {
         content.innerHTML = '<div class="kw-grid-empty">No keyword matches</div>';
     } else {
-        content.innerHTML = cells.join('');
-        content.querySelectorAll('.kw-grid-cell').forEach(cell => {
-            cell.addEventListener('click', () => {
-                const k = (cell as HTMLElement).dataset.keyword;
-                state.allKeywordMode = false;
-                _closeMobileSidebar();
-                if (state.currentDocUrl === url) {
-                    if (doc?.type === 'pdf') _cycleSearch(k);
-                    else _cycleDocSearch(k);
-                } else {
-                    _loadDocument(url, k);
-                }
-            });
-        });
+        content.replaceChildren(...cells);
     }
 }
 

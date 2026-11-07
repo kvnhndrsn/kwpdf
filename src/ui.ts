@@ -929,6 +929,24 @@ export function setupEventListeners() {
     }
 
     let _scrollRAF = null;
+    // Page bottoms are cached per layout so the scroll frame does not read
+    // offsetTop/offsetHeight for every page on every frame (a forced layout per
+    // page, up to 1,000 of them). The key changes when zoom or document does.
+    let _pageBottoms = null;
+    let _pageBottomsKey = '';
+    const getPageBottoms = () => {
+        const key = state.docGeneration + ':' + state.currentScale + ':' + state.totalPages;
+        if (_pageBottoms && _pageBottomsKey === key) return _pageBottoms;
+        const bottoms = new Array(state.totalPages + 1).fill(0);
+        for (let i = 1; i <= state.totalPages; i++) {
+            const pageEl = document.getElementById('page-' + i);
+            if (pageEl) bottoms[i] = pageEl.offsetTop + pageEl.offsetHeight;
+        }
+        _pageBottoms = bottoms;
+        _pageBottomsKey = key;
+        return bottoms;
+    };
+
     dom.viewerScroll.addEventListener('scroll', () => {
         if (_scrollRAF) return;
         _scrollRAF = requestAnimationFrame(() => {
@@ -941,13 +959,14 @@ export function setupEventListeners() {
             const scrollHeight = dom.viewerScroll.scrollHeight;
             const midPoint = scrollTop + containerHeight / 2;
 
+            const bottoms = getPageBottoms();
+            let lo = 1;
+            let hi = state.totalPages;
             let detectedPage = null;
-            for (let i = 1; i <= state.totalPages; i++) {
-                const pageEl = document.getElementById('page-' + i);
-                if (!pageEl) continue;
-                const pageTop = pageEl.offsetTop;
-                const pageBottom = pageTop + pageEl.offsetHeight;
-                if (midPoint < pageBottom) { detectedPage = i; break; }
+            while (lo <= hi) {
+                const mid = (lo + hi) >>> 1;
+                if (bottoms[mid] > midPoint) { detectedPage = mid; hi = mid - 1; }
+                else lo = mid + 1;
             }
 
             if (!detectedPage && scrollTop + containerHeight >= scrollHeight - 50) detectedPage = state.totalPages;

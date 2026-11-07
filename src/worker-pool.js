@@ -151,7 +151,9 @@ export class WorkerPool {
             const taskData = {
                 task: 'regex-pdf-cache',
                 data: {
-                    pages: pages,
+                    // Only the text is read by the worker. Posting whole page
+                    // objects cloned every item and viewport matrix per rescan.
+                    pages: pages.map(p => (p && p.text) || ''),
                     fileName: fileName,
                     keywords: keywords || [],
                     cacheKey: cacheKey

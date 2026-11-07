@@ -2,6 +2,7 @@ import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } fr
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
+import { htmlToText } from './html-text';
 
 state.searchCache = {};
 state.docSearchResults = [];
@@ -15,6 +16,11 @@ state._docPageOffsets = null;
 // but that text only changes when another document is opened.
 const docQueryCache = new Map<string, any[]>();
 const DOC_QUERY_CACHE_LIMIT = 20;
+
+/** Drop per-query results after the keyword list changes. */
+export function clearDocQueryCache() {
+    docQueryCache.clear();
+}
 
 // Pages currently carrying <mark class="doc-highlight"> markup, so a
 // re-render can restore just those instead of re-parsing every page.
@@ -72,26 +78,42 @@ function splitByBlockElements(html, targetPerPage) {
 }
 
 function textFromHtml(html) {
-    const d = document.createElement('div');
-    d.innerHTML = html;
-    return d.textContent.replace(/\s+/g, ' ').trim();
+    return htmlToText(html);
 }
 
-function buildPageOffsets(pageTexts) {
+export function buildPageOffsets(pageTexts, fullText) {
     const offsets = [];
-    let acc = 0;
+    let cursor = 0;
     for (const t of pageTexts) {
-        offsets.push(acc);
-        acc += t.length;
+        // Each page's text is trimmed, while the searched string has every
+        // whitespace run collapsed, so summing page lengths leaves the table one
+        // separator short at each boundary and later matches land on an earlier
+        // page. Locate each page inside the searched text instead.
+        let at = t ? fullText.indexOf(t, cursor) : -1;
+        if (at === -1) at = cursor;
+        offsets.push(at);
+        cursor = at + t.length;
     }
     return offsets;
 }
 
-function findPageForIndex(charIndex, offsets) {
-    for (let i = offsets.length - 1; i >= 0; i--) {
-        if (charIndex >= offsets[i]) return i + 1;
+export function findPageForIndex(charIndex, offsets) {
+    // Offsets are ascending: find the last page whose text starts at or before
+    // charIndex. Called once per match, so a linear backwards scan over a long
+    // document's pages showed up in navigation latency.
+    let lo = 0;
+    let hi = offsets.length - 1;
+    let page = 0;
+    while (lo <= hi) {
+        const mid = (lo + hi) >>> 1;
+        if (offsets[mid] <= charIndex) {
+            page = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
     }
-    return 1;
+    return page + 1;
 }
 
 function computeDocResults(query) {
@@ -233,7 +255,7 @@ function renderDocContent(html, plainText) {
     const pageHtmls = splitHtmlIntoPages(html);
     const pageTexts = pageHtmls.map(textFromHtml);
     state._docPageHtmls = pageHtmls;
-    state._docPageOffsets = buildPageOffsets(pageTexts);
+    state._docPageOffsets = buildPageOffsets(pageTexts, plainText);
     state.totalPages = pageHtmls.length;
     state.currentPage = 1;
 
@@ -330,6 +352,10 @@ export function performDocSearch(query) {
         state.emit('badge-changed');
         goToDocMatch(0);
     } else {
+        // No hits: remove the previous query's marks, which renderDocHighlights
+        // restores from the page HTML before it early-returns.
+        state.docCurrentMatchIndex = -1;
+        renderDocHighlights();
         dom.navGroup.classList.remove('active');
         dom.navSep.style.display = 'none';
         dom.matchTotal.textContent = '0';
@@ -343,7 +369,17 @@ export function cycleDocSearch(query) {
 
     const results = computeDocResults(query);
 
-    if (results.length === 0) return;
+    if (results.length === 0) {
+        state.docSearchResults = [];
+        state.docCurrentMatchIndex = -1;
+        renderDocHighlights();
+        dom.navGroup.classList.remove('active');
+        dom.navSep.style.display = 'none';
+        dom.matchTotal.textContent = '0';
+        dom.matchInput.value = '';
+        state.emit('badge-changed');
+        return;
+    }
 
     const wasSameQuery = state.docSearchResults.length > 0 && state.docContentCache[state.currentDocUrl]?.lastQuery === query;
     state.docCurrentMatchIndex = (!wasSameQuery) ? 0 : (state.docCurrentMatchIndex + 1) % results.length;
@@ -403,6 +439,17 @@ export function renderDocHighlights() {
 
         // Build a single regex matching any of the result texts (word-bounded, matching search)
         const uniqueTerms = [...new Set(pageResults.map(r => r.text))];
+
+        // A term can occur several times on a page. Consume the page's results
+        // for that term in document order: `find`-ing by text always returned
+        // occurrence 1, so the current mark never moved past it.
+        const pending = new Map<string, any[]>();
+        for (const r of pageResults) {
+            const key = (r.text as string).toLowerCase();
+            const bucket = pending.get(key);
+            if (bucket) bucket.push(r);
+            else pending.set(key, [r]);
+        }
         const combinedPattern = uniqueTerms.map(t => '\\b' + (t as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').join('|');
         const combinedRegex = new RegExp(combinedPattern, 'gi');
 
@@ -421,9 +468,16 @@ export function renderDocHighlights() {
                 const span = document.createElement('span');
                 span.innerHTML = content.replace(combinedRegex, match => {
                     const lower = match.toLowerCase();
-                    const matchingResult = pageResults.find(r => r.text.toLowerCase() === lower);
-                    const isCurrent = matchingResult && matchingResult.matchIndex === state.docCurrentMatchIndex;
-                    return `<mark class="doc-highlight${isCurrent ? ' current' : ''}">${match}</mark>`;
+                    const bucket = pending.get(lower);
+                    const matchingResult = bucket && bucket.length ? bucket.shift() : undefined;
+                    const isCurrent = !!matchingResult && matchingResult.matchIndex === state.docCurrentMatchIndex;
+                    // The match is document text, not markup: a keyword that
+                    // happens to look like a tag must not become one.
+                    const safe = match
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                    return `<mark class="doc-highlight${isCurrent ? ' current' : ''}">${safe}</mark>`;
                 });
                 textNode.parentNode.replaceChild(span, textNode);
                 replaced = true;

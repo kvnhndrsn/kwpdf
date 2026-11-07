@@ -9,10 +9,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = basePath + 'pdf.worker.min.mjs';
 setPdfjsLib(pdfjsLib);
 setJSZip(JSZip);
 setMammoth(mammoth);
+setBasePath(basePath);
 
 import { state } from './state';
 import * as dom from './dom';
-import { register, fn, setPdfjsLib, setJSZip, setMammoth } from './cross';
+import { register, fn, setPdfjsLib, setJSZip, setMammoth, setBasePath } from './cross';
 
 import * as pdfRenderer from './pdf-renderer';
 import * as pdfSearch from './pdf-search';
@@ -53,12 +54,14 @@ register('cycleDocSearch', docxEngine.cycleDocSearch);
 register('cycleAllDocKeywords', docxEngine.cycleAllDocKeywords);
 register('renderDocHighlights', docxEngine.renderDocHighlights);
 register('goToDocMatch', docxEngine.goToDocMatch);
+register('clearDocQueryCache', docxEngine.clearDocQueryCache);
 
 register('loadDocument', pdfLoader.loadDocument);
 
 register('handleDrop', fileHandler.handleDrop);
 register('extractPdfText', fileHandler.extractPdfText);
 register('extractDocText', fileHandler.extractDocText);
+register('rescanAllDocuments', fileHandler.rescanAllDocuments);
 
 register('renderPlaceholderCard', rendering.renderPlaceholderCard);
 register('renderCard', rendering.renderCard);
@@ -154,6 +157,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
     await keywords.loadKeywords();
+    // A keyword list that failed to load used to be a console line and an empty
+    // list: every document then reported "no matches". Say so on screen.
+    keywords.showKeywordLoadError();
     keywords.populateListSelector();
     keywords.syncKeywordsToWindow();
     ui.setupEventListeners();

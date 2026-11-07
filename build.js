@@ -73,6 +73,10 @@ if (sw.includes('__CACHE_VERSION__')) {
 fs.writeFileSync(path.join(dist, 'service_worker.js'), sw);
 
 copy('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'pdf.worker.min.mjs');
+// pdf.js needs these next to the app: CMaps for CJK/encoded fonts and
+// standard_fonts for the base-14 fonts that PDFs usually leave unembedded.
+copy('node_modules/pdfjs-dist/cmaps', 'cmaps');
+copy('node_modules/pdfjs-dist/standard_fonts', 'standard_fonts');
 copy('src/doc_processor_worker.js', 'utils/doc_processor_worker.js');
 copy('src/ocr_worker.js', 'utils/ocr_worker.js');
 
