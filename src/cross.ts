@@ -11,7 +11,7 @@ export let DEFAULT_LIST_NAME = 'Central Supply-Only';
 // font data next to the bundle instead of assuming the site root.
 export let basePath = './';
 
-export function register(name: string, func: (...args: any[]) => any): void {
+export function register<K extends keyof FnRegistry>(name: K, func: NonNullable<FnRegistry[K]>): void {
     fn[name] = func;
 }
 

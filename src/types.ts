@@ -245,7 +245,115 @@ export interface State {
 
 // ── Module registry types ──
 
-export type FnRegistry = Record<string, (...args: any[]) => any>;
+/**
+ * The cross-module function registry in `cross.ts`, one entry per `register()`
+ * call. Names are listed so a typo in a lookup (`fn.performSerch`) or in a
+ * registration is a compile error instead of a silent no-op; the signatures are
+ * deliberately loose (the implementations live in modules whose parameters are
+ * mostly untyped) and every entry is optional until its module registers it.
+ */
+export interface AppFunctions {
+    // UI shell
+    activateGlobalSearch(navigateToLast?: boolean, noScroll?: boolean): void;
+    clearAllResults(): void;
+    clearSearch(): void;
+    closeMobileSidebar(): void;
+    closeSearchOverlay(): void;
+    cycleGlobalSearch(): void;
+    cycleGlobalSearchPrev(): void;
+    findNext(): void;
+    findPrev(): void;
+    goToMatch(index: number): void;
+    performGlobalSearch(query: string): void;
+    showSearchOverlay(): void;
+    toggleSettings(event?: any): void;
+    toggleTheme(): void;
+    updatePageInfo(): void;
+    updateZoomDisplay(): void;
+    zoomIn(): void;
+    zoomOut(): void;
+
+    // Results tree and sidebar
+    beginResultsBatch(): void;
+    endResultsBatch(): void;
+    finishResultsIfComplete(): void;
+    renderCard(fileName: string, counts: any, url: string, file?: any): void;
+    renderNoMatchCard(fileName: string, url: string, file?: any): void;
+    renderPlaceholderCard(fileName: string, url: string, file?: any): void;
+    renderResultsArea(): void;
+    updateKeywordGrid(url: string): void;
+    updateProgressMainThread(): void;
+    updateSidebarBadge(): void;
+    updateStats(): void;
+
+    // Results panel
+    openResultsPanel(url?: string): void;
+    closeResultsPanel(): void;
+
+    // Files
+    handleDrop(event: any): Promise<void>;
+    extractPdfText(arrayBuffer: any, fileName: string, id?: any, file?: any): Promise<any>;
+    extractDocText(arrayBuffer: any, fileName: string, id?: any, file?: any): Promise<any>;
+    rescanAllDocuments(): Promise<void>;
+    populateKeywordSelect(): void;
+
+    // Document loading
+    loadDocument(fileUrl: string, keyword?: string): Promise<any>;
+    loadDocxDoc(fileUrl: string, keyword?: string): Promise<any>;
+
+    // PDF rendering
+    setupVirtualPages(): Promise<void>;
+    teardownPdf(): void;
+    isPageRendered(pageNum: number): boolean;
+    renderPageNow(pageNum: number, forceScale?: number | null): Promise<void>;
+    setZoom(newScale: number, force?: boolean): void;
+    startPrerender(): void;
+    rebuildTextLayers(): void;
+    setRenderQuality(quality: string): void;
+
+    // PDF search and highlights
+    precomputeAllSearches(): Promise<void>;
+    performSearch(query: string): Promise<void>;
+    _performSearch(...args: any[]): any;
+    cycleSearch(query: string): void;
+    cycleAllKeywords(): void;
+    clearHighlights(): void;
+    renderAllHighlights(): void;
+    renderHighlightsForPage(pageNum: number): void;
+    updateCurrentMatch(oldIndex: number, newIndex: number): void;
+    repositionHighlights(): void;
+
+    // DOCX
+    performDocSearch(query: string): void;
+    cycleDocSearch(query: string): void;
+    cycleAllDocKeywords(): void;
+    goToDocMatch(index: number): void;
+    renderDocHighlights(): void;
+    clearDocQueryCache(): void;
+
+    // Measurement tools
+    activateTool(tool: string): void;
+    deactivateTool(): void;
+    getActiveTool(): string;
+    setScale(value: number): void;
+    startCalibration(): void;
+    cancelCalibration(): void;
+    getIsCalibrating(): boolean;
+    renderAllMeasurements(): void;
+    refreshAllMeasurements(): void;
+    clearMeasurements(): void;
+
+    // OCR
+    isOcrEnabled(): boolean;
+    toggleOcrGlobal(): void;
+    toggleOcrForFile(url: string): void;
+    getOcrState(url: string): any;
+    getOcrMatchesForKeyword(keyword: string, url: string): any;
+    resetOcrState(): void;
+}
+
+/** Every entry is optional: a module's functions exist only after it registers. */
+export type FnRegistry = { [K in keyof AppFunctions]?: AppFunctions[K] };
 
 export interface WorkerPoolInstance {
     initialized: boolean;

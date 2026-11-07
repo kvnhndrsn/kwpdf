@@ -273,3 +273,11 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - 0.21: 20 documents scanned, then a keyword list change starts the rescan and "Clear all" is pressed mid-flight — the tree empties, the drop hint returns and there are no page or console errors.
 - Not automated (see the table at the top of this file): 0.13 OCR reset, 0.14 pdf.js heap, 0.22 DOCX import timing, 0.24 OCR pulse.
 - Scope caveat: the 0.17 "no long tasks while scrolling" and 0.19 "~11 canvases for a 200-hit search" claims are not measured here. The case proves the page indicator tracks a jump and that canvases stay bounded, not the frame timings or the exact prerender radius.
+
+## E3 — type the module registry
+
+- `cross.ts` exposed `fn` as `Record<string, (...args: any[]) => any>`, so a misspelled lookup (`fn.performSerch(...)`) compiled and then threw at runtime with no help from the editor — and the 78 `register()` calls were equally unchecked.
+- `src/types.ts` now declares `AppFunctions` with every registered name and a loose but real signature (page numbers and queries are `number`/`string`, not `any`). `FnRegistry` maps those keys to optional members, because a module's functions only exist after it registers, and `register()` is now `register<K extends keyof FnRegistry>(name: K, func: NonNullable<FnRegistry[K]>)`, so registering an unknown name or a function of the wrong arity is a compile error.
+- Members stay optional and lookups are unchanged: existing `typeof fn.x === 'function'` guards still narrow correctly, and with `strictNullChecks` off in the base config a guarded call site needs no edits. The only call-site fallout was `extractPdfText`/`extractDocText`, which the archive path calls with three and two arguments; `id`/`file` are declared optional to match how they are actually used.
+- Verified: typecheck 0 (both configs), 321 unit tests, 26 e2e cases, eslint 0, format:check 0. No runtime change — this commit is types only.
+- Not done: `ui.ts` (1,628 lines) is still one module. Splitting it into navigation / toolbar / settings / drag-drop is the other half of E3 and has not been started; nothing here depends on it.
