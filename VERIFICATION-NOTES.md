@@ -143,3 +143,9 @@ Encrypted PDFs used to reject the load with no way to supply a password (`getDoc
 - `processTextContent` (`pdf-search.ts`) is documented as the canonical implementation; `processTextContentOnItems` in `doc_processor_worker.js` cannot import it and now says so, so a change to one is visible from the other.
 - Verified: grep for every removed symbol returns nothing, `npm run typecheck` 0, `npx vitest run` 256 passed / 20 files, `npm run build` 0.
 - Browser smoke after the change: dropping `one-kw.pdf` + `mixed.pdf` scanned both (tree rows with 6 and 9 matches, "15 matches across 2 documents"); the rescan path (switching keyword list + Save & Apply) reran both documents and the counts moved to 6 / 7 with "13 matches across 2 documents". Opening a PDF in the viewer still stalls in the preview tab at "Rendering first page..." for the usual `requestAnimationFrame` reason, so the open path itself was only checked through the scan results.
+
+## D2 — CI runs typecheck and tests
+
+- `deploy.yml` already ran `npm run typecheck` and `npm test` before `npm run build`, so the real gaps were that it installed with `npm install` (which silently papered over a `package.json`/lockfile mismatch) and that it only ran on `main`, leaving pull requests with no checks. It now installs with `npm ci`, uses the npm cache, and a new `ci.yml` runs the same four steps (`npm ci`, typecheck, test, build) on every pull request and on pushes to branches other than `main`.
+- Verified locally: `npm ci --dry-run` resolves the lockfile (lockfileVersion 3) without touching `node_modules`, and the workflow's steps run green by hand — typecheck 0, 256 tests in 20 files, build 0. Both workflow files parse as YAML.
+- NOT verified: an actual GitHub Actions run, including the "deliberate failure blocks the deploy" check, because that needs a pushed PR and pushing is on hold. CI syntax and step order can only be confirmed by a real run.

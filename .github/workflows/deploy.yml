@@ -16,7 +16,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: npm install
+          cache: npm
+      # npm ci installs exactly the lockfile and fails when it disagrees with
+      # package.json, which `npm install` would silently paper over.
+      - run: npm ci
       # Type errors and failing tests used to deploy straight to Pages.
       - run: npm run typecheck
       - run: npm test

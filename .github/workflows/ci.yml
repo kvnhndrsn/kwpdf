@@ -1,0 +1,30 @@
+name: CI
+
+# The deploy workflow only runs on main, so a pull request used to get no checks
+# at all: a type error or a failing test surfaced as a broken Pages deploy after
+# merge. Deploy still runs the same steps before publishing, so a direct push to
+# main cannot publish broken code either.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The build is the only step that runs esbuild over every entry point, so
+      # it is what catches a module that no test imports.
+      - run: npm run build
