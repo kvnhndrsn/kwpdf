@@ -24,7 +24,7 @@ describe('fitScaleForPixels', () => {
 
     it('is monotonic and plateaus once the budget binds', () => {
         // 1200x1600 = 1.92 MP at 1x: fits through 2x, clamps from 4x on.
-        const fitted = [1, 2, 4, 8, 16, 32].map(s => fitScaleForPixels(1200, 1600, s));
+        const fitted = [1, 2, 4, 8, 16, 32].map((s) => fitScaleForPixels(1200, 1600, s));
         for (let i = 1; i < fitted.length; i++) {
             expect(fitted[i]).toBeGreaterThanOrEqual(fitted[i - 1]);
         }

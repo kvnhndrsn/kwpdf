@@ -8,11 +8,7 @@ describe('DOCX page offsets', () => {
 
     it('starts each page where its text appears in the searched string', () => {
         const offsets = buildPageOffsets(pages, text);
-        expect(offsets).toEqual([
-            text.indexOf('First'),
-            text.indexOf('Second'),
-            text.indexOf('Third'),
-        ]);
+        expect(offsets).toEqual([text.indexOf('First'), text.indexOf('Second'), text.indexOf('Third')]);
     });
 
     it('maps boundary indexes to the page that contains them', () => {

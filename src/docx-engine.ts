@@ -79,7 +79,7 @@ function splitByBlockElements(html, targetPerPage) {
 
         // If this child alone exceeds target, it gets its own page
         if (currentLen > 0 && currentLen + textLen > targetPerPage) {
-            pages.push(currentPage.map(el => el.outerHTML).join('\n'));
+            pages.push(currentPage.map((el) => el.outerHTML).join('\n'));
             currentPage = [];
             currentLen = 0;
         }
@@ -89,7 +89,7 @@ function splitByBlockElements(html, targetPerPage) {
     }
 
     if (currentPage.length > 0) {
-        pages.push(currentPage.map(el => el.outerHTML).join('\n'));
+        pages.push(currentPage.map((el) => el.outerHTML).join('\n'));
     }
 
     return pages;
@@ -161,11 +161,11 @@ function computeDocResults(query) {
 }
 
 function styleTables(container) {
-    container.querySelectorAll('table').forEach(table => {
+    container.querySelectorAll('table').forEach((table) => {
         table.style.borderCollapse = 'collapse';
         table.style.width = '100%';
     });
-    container.querySelectorAll('td, th').forEach(cell => {
+    container.querySelectorAll('td, th').forEach((cell) => {
         cell.style.border = '1px solid #000';
         cell.style.padding = '4px';
     });
@@ -206,7 +206,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
             let cached = state.docContentCache[fileUrl];
             if (!cached) {
                 dom.loaderFilename.textContent = 'Re-scanning DOCX...';
-                const blobUrl = state.objectUrls.find(url => url === fileUrl);
+                const blobUrl = state.objectUrls.find((url) => url === fileUrl);
                 if (blobUrl) {
                     const response = await fetch(blobUrl);
                     const arrayBuffer = await response.arrayBuffer();
@@ -251,7 +251,10 @@ export function loadDocxDoc(fileUrl, keyword = '') {
                 const counts = state.docKeywordCounts;
                 if (counts) {
                     for (const [k, v] of Object.entries(counts)) {
-                        if ((v as unknown as number) > 0) { keyword = k; break; }
+                        if ((v as unknown as number) > 0) {
+                            keyword = k;
+                            break;
+                        }
                     }
                 }
             }
@@ -324,7 +327,7 @@ function startDocSearchComputation() {
     }
 
     const counts = {};
-    results.forEach(r => {
+    results.forEach((r) => {
         counts[r.keyword] = (counts[r.keyword] || 0) + 1;
     });
 
@@ -408,8 +411,9 @@ export function cycleDocSearch(query) {
         return;
     }
 
-    const wasSameQuery = state.docSearchResults.length > 0 && state.docContentCache[state.currentDocUrl]?.lastQuery === query;
-    state.docCurrentMatchIndex = (!wasSameQuery) ? 0 : (state.docCurrentMatchIndex + 1) % results.length;
+    const wasSameQuery =
+        state.docSearchResults.length > 0 && state.docContentCache[state.currentDocUrl]?.lastQuery === query;
+    state.docCurrentMatchIndex = !wasSameQuery ? 0 : (state.docCurrentMatchIndex + 1) % results.length;
     if (state.docContentCache[state.currentDocUrl]) state.docContentCache[state.currentDocUrl].lastQuery = query;
 
     state.docSearchResults = results;
@@ -486,7 +490,7 @@ export function renderDocHighlights() {
         const pageResults = resultsByPage[pageNum];
 
         // Build a single regex matching any of the result texts (word-bounded, matching search)
-        const uniqueTerms = [...new Set(pageResults.map(r => r.text))];
+        const uniqueTerms = [...new Set(pageResults.map((r) => r.text))];
 
         // A term can occur several times on a page. Consume the page's results
         // for that term in document order: `find`-ing by text always returned
@@ -498,7 +502,9 @@ export function renderDocHighlights() {
             if (bucket) bucket.push(r);
             else pending.set(key, [r]);
         }
-        const combinedPattern = uniqueTerms.map(t => '\\b' + (t as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').join('|');
+        const combinedPattern = uniqueTerms
+            .map((t) => '\\b' + (t as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b')
+            .join('|');
         const combinedRegex = new RegExp(combinedPattern, 'gi');
 
         // Walk text nodes
@@ -514,17 +520,14 @@ export function renderDocHighlights() {
             if (combinedRegex.test(content)) {
                 combinedRegex.lastIndex = 0;
                 const span = document.createElement('span');
-                span.innerHTML = content.replace(combinedRegex, match => {
+                span.innerHTML = content.replace(combinedRegex, (match) => {
                     const lower = match.toLowerCase();
                     const bucket = pending.get(lower);
                     const matchingResult = bucket && bucket.length ? bucket.shift() : undefined;
                     const isCurrent = !!matchingResult && matchingResult.matchIndex === state.docCurrentMatchIndex;
                     // The match is document text, not markup: a keyword that
                     // happens to look like a tag must not become one.
-                    const safe = match
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;');
+                    const safe = match.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     const mi = matchingResult ? ` data-mi="${matchingResult.matchIndex}"` : '';
                     return `<mark class="doc-highlight${isCurrent ? ' current' : ''}"${mi}>${safe}</mark>`;
                 });
@@ -537,7 +540,7 @@ export function renderDocHighlights() {
 
     // Index the marks by match so the next navigation is a class toggle.
     const marks: Array<HTMLElement | undefined> = new Array(results.length);
-    wrapper.querySelectorAll<HTMLElement>('mark.doc-highlight[data-mi]').forEach(el => {
+    wrapper.querySelectorAll<HTMLElement>('mark.doc-highlight[data-mi]').forEach((el) => {
         const mi = Number(el.dataset.mi);
         if (Number.isInteger(mi) && mi >= 0 && mi < marks.length) marks[mi] = el;
     });
@@ -553,7 +556,8 @@ export function renderDocHighlights() {
 export function goToDocMatch(index) {
     if (!state.docSearchResults.length) return;
 
-    state.docCurrentMatchIndex = ((index % state.docSearchResults.length) + state.docSearchResults.length) % state.docSearchResults.length;
+    state.docCurrentMatchIndex =
+        ((index % state.docSearchResults.length) + state.docSearchResults.length) % state.docSearchResults.length;
     (dom.matchInput as HTMLInputElement).value = String(state.docCurrentMatchIndex + 1);
     state.emit('badge-changed');
 

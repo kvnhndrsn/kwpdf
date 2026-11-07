@@ -23,7 +23,7 @@ function emptyPageViewport(pageNum) {
         offsetX: 0,
         offsetY: 0,
         transform: [1, 0, 0, -1, 0, height],
-        rotation: 0
+        rotation: 0,
     };
 }
 
@@ -77,7 +77,11 @@ function loadPDF(fileUrl, keyword = '') {
                     if (!isCurrentGeneration(generation)) return;
                     if (password === null) {
                         passwordCancelled = true;
-                        try { loadingTask.destroy(); } catch (e) { /* already gone */ }
+                        try {
+                            loadingTask.destroy();
+                        } catch (e) {
+                            /* already gone */
+                        }
                         return;
                     }
                     updatePassword(password);
@@ -87,7 +91,9 @@ function loadPDF(fileUrl, keyword = '') {
 
             if (!isCurrentGeneration(generation)) {
                 // A newer document won the race; discard this one.
-                try { doc.destroy(); } catch (e) {}
+                try {
+                    doc.destroy();
+                } catch (e) {}
                 return;
             }
 
@@ -129,49 +135,46 @@ function loadPDF(fileUrl, keyword = '') {
                 // immediately instead of being pinned until every page is done.
                 const pageTextData = new Array(state.totalPages);
                 let nextPage = 1;
-                const workers = Array.from(
-                    { length: Math.min(EXTRACT_CONCURRENCY, state.totalPages) },
-                    async () => {
-                        while (nextPage <= state.totalPages) {
-                            if (!isCurrentGeneration(generation)) return;
-                            const p = nextPage++;
-                            const pageNum = p;
-                            let slot: any;
+                const workers = Array.from({ length: Math.min(EXTRACT_CONCURRENCY, state.totalPages) }, async () => {
+                    while (nextPage <= state.totalPages) {
+                        if (!isCurrentGeneration(generation)) return;
+                        const p = nextPage++;
+                        const pageNum = p;
+                        let slot: any;
+                        try {
+                            const page = await docRef.getPage(pageNum);
+                            const viewport = page.getViewport({ scale: 1.0 });
+                            let content = null;
                             try {
-                                const page = await docRef.getPage(pageNum);
-                                const viewport = page.getViewport({ scale: 1.0 });
-                                let content = null;
-                                try {
-                                    content = await page.getTextContent();
-                                } catch (e) {
-                                    content = null;
-                                }
-
-                                if (!content) {
-                                    slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
-                                } else {
-                                    const { text, items } = await processTextContentAsync(content);
-                                    content = null;
-                                    slot = {
-                                        text,
-                                        viewport: {
-                                            width: viewport.width,
-                                            height: viewport.height,
-                                            offsetX: viewport.offsetX,
-                                            offsetY: viewport.offsetY,
-                                            transform: viewport.transform,
-                                            rotation: viewport.rotation
-                                        },
-                                        items
-                                    };
-                                }
+                                content = await page.getTextContent();
                             } catch (e) {
-                                slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                                content = null;
                             }
-                            pageTextData[pageNum - 1] = slot;
+
+                            if (!content) {
+                                slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
+                            } else {
+                                const { text, items } = await processTextContentAsync(content);
+                                content = null;
+                                slot = {
+                                    text,
+                                    viewport: {
+                                        width: viewport.width,
+                                        height: viewport.height,
+                                        offsetX: viewport.offsetX,
+                                        offsetY: viewport.offsetY,
+                                        transform: viewport.transform,
+                                        rotation: viewport.rotation,
+                                    },
+                                    items,
+                                };
+                            }
+                        } catch (e) {
+                            slot = { text: '', viewport: emptyPageViewport(pageNum), items: [] };
                         }
+                        pageTextData[pageNum - 1] = slot;
                     }
-                );
+                });
                 await Promise.all(workers);
                 if (!isCurrentGeneration(generation)) return;
                 dom.loaderProgressFill.style.width = '80%';
@@ -181,7 +184,7 @@ function loadPDF(fileUrl, keyword = '') {
                     pages: pageTextData,
                     fileName,
                     _lastAccess: Date.now(),
-                    _size: estimatePagesSize(pageTextData) + fileName.length
+                    _size: estimatePagesSize(pageTextData) + fileName.length,
                 };
                 dropCachedDocument(fileUrl);
                 state.docTextCache[fileUrl] = cached;

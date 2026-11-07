@@ -149,8 +149,8 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
     let pdf = null;
     try {
         const fakeDoc = {
-            createElement: name => name === 'canvas' ? new OffscreenCanvas(1, 1) : null,
-            fonts: {}
+            createElement: (name) => (name === 'canvas' ? new OffscreenCanvas(1, 1) : null),
+            fonts: {},
         };
 
         const pdfData = new Uint8Array(arrayBuffer);
@@ -178,9 +178,9 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
                     offsetX: vp.offsetX,
                     offsetY: vp.offsetY,
                     transform: vp.transform,
-                    rotation: vp.rotation
+                    rotation: vp.rotation,
                 },
-                items
+                items,
             });
             if (numPages > 1) dom.statusBar.textContent = 'Extracting pages: ' + p + '/' + numPages;
         }
@@ -209,7 +209,7 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             pages: pageTextData,
             fileName,
             _lastAccess: Date.now(),
-            _size: estimatePagesSize(pageTextData) + fileName.length
+            _size: estimatePagesSize(pageTextData) + fileName.length,
         };
         // A rescan of the same URL replaces the entry; drop the old one first
         // or its size stays counted forever.
@@ -236,7 +236,11 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
         // else would release this loading task's worker and page caches; left
         // alone, every scanned PDF leaks one for the life of the tab.
         if (pdf) {
-            try { await pdf.destroy(); } catch (e) { /* already torn down */ }
+            try {
+                await pdf.destroy();
+            } catch (e) {
+                /* already torn down */
+            }
         }
     }
 }
@@ -291,7 +295,7 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
             fileName,
             type,
             _lastAccess: Date.now(),
-            _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length
+            _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length,
         };
         dropCachedDocument(id);
         state.docContentCache[id] = docxCacheEntry;
@@ -362,7 +366,7 @@ async function processBatchFile(file): Promise<boolean> {
 
     let success = false;
     try {
-        const arrayBuffer = file._cachedBuffer || await file.arrayBuffer();
+        const arrayBuffer = file._cachedBuffer || (await file.arrayBuffer());
         const type = getFileType(file.name);
 
         // Key documents by their folder-relative path, not the bare name:
@@ -408,7 +412,7 @@ async function processFiles(source) {
     if (viewerMsg) viewerMsg.style.display = 'none';
 
     const statusMsgs = dom.resultsArea.querySelectorAll('.status-msg');
-    statusMsgs.forEach(el => el.remove());
+    statusMsgs.forEach((el) => el.remove());
 
     if (files && files.length === 1) {
         // ── Single file: render immediately, search async inside loadDocument ──
@@ -456,7 +460,10 @@ async function processFiles(source) {
     if (!files && batch.total === 1) {
         try {
             for await (const chunk of chunksOf(batch.chunks)) {
-                if (chunk.files.length === 1) { await processFiles([chunk.files[0]]); return; }
+                if (chunk.files.length === 1) {
+                    await processFiles([chunk.files[0]]);
+                    return;
+                }
             }
         } finally {
             batch.close?.();
@@ -507,22 +514,31 @@ async function processFiles(source) {
     if (passwordSkipped > 0) {
         const note = document.createElement('div');
         note.className = 'status-msg';
-        note.textContent = passwordSkipped + ' file(s) skipped — password-protected ' +
-            '(open one on its own to enter its password)';
+        note.textContent =
+            passwordSkipped + ' file(s) skipped — password-protected ' + '(open one on its own to enter its password)';
         dom.resultsArea.prepend(note);
         const otherFailures = failedCount - passwordSkipped;
-        dom.statusBar.textContent = passwordSkipped + ' file(s) skipped (password-protected)' +
+        dom.statusBar.textContent =
+            passwordSkipped +
+            ' file(s) skipped (password-protected)' +
             (otherFailures > 0 ? ' · ' + otherFailures + ' failed' : '');
     }
 
     if (skippedByLimit > 0) {
         const note = document.createElement('div');
         note.className = 'status-msg';
-        note.textContent = skippedByLimit + ' file(s) skipped — only the first ' +
-            state.MAX_TOTAL_FILES + ' files of a drop are scanned';
+        note.textContent =
+            skippedByLimit +
+            ' file(s) skipped — only the first ' +
+            state.MAX_TOTAL_FILES +
+            ' files of a drop are scanned';
         dom.resultsArea.prepend(note);
-        dom.statusBar.textContent += (dom.statusBar.textContent ? ' · ' : '') +
-            skippedByLimit + ' skipped (limit ' + state.MAX_TOTAL_FILES + ')';
+        dom.statusBar.textContent +=
+            (dom.statusBar.textContent ? ' · ' : '') +
+            skippedByLimit +
+            ' skipped (limit ' +
+            state.MAX_TOTAL_FILES +
+            ')';
     }
 }
 
@@ -542,7 +558,7 @@ export async function handleDrop(e) {
         const viewerMsg = document.getElementById('viewerDropMsg');
         if (viewerMsg) viewerMsg.style.display = 'none';
         const statusMsgs = dom.resultsArea.querySelectorAll('.status-msg');
-        statusMsgs.forEach(el => el.remove());
+        statusMsgs.forEach((el) => el.remove());
 
         for (const entry of entries) {
             if (entry.isFile && entry.name.toLowerCase().endsWith('.zip')) {
@@ -603,12 +619,12 @@ async function traverseFileTree(item, fileList, baseDir = '') {
             const file = await new Promise((resolve, reject) => {
                 item.file(resolve, reject);
             });
-			(file as any).relativePath = currentPath;
-			fileList.push(file);
-		} catch (err) {
-			showFileError(currentPath, 'Failed to read file: ' + (err.message || err));
-			return;
-		}
+            (file as any).relativePath = currentPath;
+            fileList.push(file);
+        } catch (err) {
+            showFileError(currentPath, 'Failed to read file: ' + (err.message || err));
+            return;
+        }
         if (fileList.length % 10 === 0) {
             dom.statusBar.textContent = 'Reading folder: found ' + fileList.length + ' files...';
         }
@@ -659,11 +675,18 @@ async function openZipSource(zipFile) {
         if (!entry.dir && getFileType(path)) entries.push({ path, entry });
     });
 
-    entries.sort((a, b) => (a.entry._data && a.entry._data.uncompressedSize || 0) - (b.entry._data && b.entry._data.uncompressedSize || 0));
+    entries.sort(
+        (a, b) =>
+            ((a.entry._data && a.entry._data.uncompressedSize) || 0) -
+            ((b.entry._data && b.entry._data.uncompressedSize) || 0),
+    );
 
     const total = Math.min(entries.length, state.MAX_TOTAL_FILES);
     if (entries.length > total) {
-        showFileError(zipFile.name, (entries.length - total) + ' file(s) in the archive skipped (limit ' + state.MAX_TOTAL_FILES + ')');
+        showFileError(
+            zipFile.name,
+            entries.length - total + ' file(s) in the archive skipped (limit ' + state.MAX_TOTAL_FILES + ')',
+        );
     }
     if (total === 0) {
         dom.statusBar.textContent = 'No supported files found in ' + zipFile.name;
@@ -685,10 +708,12 @@ async function openZipSource(zipFile) {
 
         for (let i = 0; i < total; i += concurrency) {
             const group = entries.slice(i, i + concurrency);
-            const results = await Promise.allSettled(group.map(async ({ path, entry }) => {
-                const blob = await entry.async('blob');
-                return { blob, path, type: getFileType(path) };
-            }));
+            const results = await Promise.allSettled(
+                group.map(async ({ path, entry }) => {
+                    const blob = await entry.async('blob');
+                    return { blob, path, type: getFileType(path) };
+                }),
+            );
 
             const files = [];
             let skipped = 0;
@@ -707,7 +732,8 @@ async function openZipSource(zipFile) {
                     continue;
                 }
                 let mimeType = 'application/pdf';
-                if (type === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                if (type === 'docx')
+                    mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
                 else if (type === 'doc') mimeType = 'application/msword';
                 const file = new File([blob], path, { type: mimeType });
                 (file as any).relativePath = path;
@@ -737,7 +763,9 @@ async function openZipSource(zipFile) {
         total,
         skippedByLimit: 0,
         chunks: chunks(),
-        close() { zip = null; },
+        close() {
+            zip = null;
+        },
     };
 }
 
@@ -756,12 +784,12 @@ export function initFileHandler() {
         const viewerMsg = document.getElementById('viewerDropMsg');
         if (viewerMsg) viewerMsg.style.display = 'none';
         const statusMsgs = dom.resultsArea.querySelectorAll('.status-msg');
-        statusMsgs.forEach(el => el.remove());
+        statusMsgs.forEach((el) => el.remove());
 
         const filesToProcess = [];
         let processedArchive = false;
         const items = Array.from((e.target as HTMLInputElement).files || []);
-        const hasZip = items.some(f => f.name.toLowerCase().endsWith('.zip'));
+        const hasZip = items.some((f) => f.name.toLowerCase().endsWith('.zip'));
         const folderName = items.length > 0 ? ((items[0] as any).webkitRelativePath || '').split('/')[0] : '';
 
         if (hasZip) {
@@ -840,7 +868,10 @@ export async function rescanAllDocuments() {
         if (pdfCached) {
             try {
                 const result = await state.workerPool.runRegexOnPDFCache(
-                    pdfCached.pages, pdfCached.fileName || url.split('/').pop(), keywords, url
+                    pdfCached.pages,
+                    pdfCached.fileName || url.split('/').pop(),
+                    keywords,
+                    url,
                 );
 
                 const displayName = pdfCached.fileName || 'Document ' + (i + 1);
@@ -855,7 +886,10 @@ export async function rescanAllDocuments() {
             } catch (err) {
                 // A cancelled scan is not a failed document: stop without
                 // reporting an error for work the user abandoned.
-                if (err instanceof CancelledTaskError) { cancelled = true; return; }
+                if (err instanceof CancelledTaskError) {
+                    cancelled = true;
+                    return;
+                }
                 const name = pdfCached.fileName || url.split('/').pop();
                 showFileError(name, 'Rescan PDF worker error: ' + (err.message || err));
                 failedCount++;
@@ -865,7 +899,11 @@ export async function rescanAllDocuments() {
             if (docCached) {
                 try {
                     const result = await state.workerPool.runRegexOnText(
-                        docCached.text, docCached.fileName || url.split('/').pop(), keywords, 'docx', url
+                        docCached.text,
+                        docCached.fileName || url.split('/').pop(),
+                        keywords,
+                        'docx',
+                        url,
                     );
 
                     const displayName = docCached.fileName || 'Document ' + (i + 1);
@@ -878,7 +916,10 @@ export async function rescanAllDocuments() {
                         fn.renderNoMatchCard(displayName, url);
                     }
                 } catch (err) {
-                    if (err instanceof CancelledTaskError) { cancelled = true; return; }
+                    if (err instanceof CancelledTaskError) {
+                        cancelled = true;
+                        return;
+                    }
                     const name = docCached.fileName || url.split('/').pop();
                     showFileError(name, 'Rescan DOCX worker error: ' + (err.message || err));
                     failedCount++;
@@ -899,7 +940,7 @@ export async function rescanAllDocuments() {
         await mapConcurrent(
             state.objectUrls.map((url, i) => ({ url, i })),
             RESCAN_CONCURRENCY,
-            scanOne
+            scanOne,
         );
     } finally {
         fn.endResultsBatch();
@@ -914,9 +955,11 @@ export async function rescanAllDocuments() {
     } else if (state.totalMatchesFound === 0) {
         dom.statusBar.textContent = 'No matches found';
     } else {
-        dom.statusBar.textContent = state.totalMatchesFound + ' matches across ' + state.totalDocsFound + ' document' + (state.totalDocsFound !== 1 ? 's' : '');
+        dom.statusBar.textContent =
+            state.totalMatchesFound +
+            ' matches across ' +
+            state.totalDocsFound +
+            ' document' +
+            (state.totalDocsFound !== 1 ? 's' : '');
     }
 }
-
-
-

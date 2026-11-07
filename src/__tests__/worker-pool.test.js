@@ -42,12 +42,15 @@ describe('WorkerPool', () => {
     beforeEach(() => {
         instances = [];
         vi.stubGlobal('WORKER_BASE', 'utils/');
-        vi.stubGlobal('Worker', class extends StubWorker {
-            constructor(url) {
-                super(url);
-                instances.push(this);
-            }
-        });
+        vi.stubGlobal(
+            'Worker',
+            class extends StubWorker {
+                constructor(url) {
+                    super(url);
+                    instances.push(this);
+                }
+            },
+        );
     });
 
     afterEach(() => {
@@ -95,7 +98,7 @@ describe('WorkerPool', () => {
         const pool = makePool(1);
         pool.runRegexOnText('a', 'f', ['kw'], 'docx', 'k1'); // dispatched
         const queued = pool.runRegexOnText('b', 'f', ['kw'], 'docx', 'k2'); // queued
-        const caught = queued.catch(e => e);
+        const caught = queued.catch((e) => e);
 
         expect(pool.cancelStale(pool.generation + 1)).toBe(1);
 
@@ -109,7 +112,10 @@ describe('WorkerPool', () => {
         const pool = makePool(1);
         pool.runRegexOnText('a', 'f', ['kw'], 'docx', 'k1');
         const sameGen = pool.runRegexOnText('b', 'f', ['kw'], 'docx', 'k2');
-        const settled = sameGen.then(r => r, e => e);
+        const settled = sameGen.then(
+            (r) => r,
+            (e) => e,
+        );
 
         expect(pool.cancelStale(pool.generation)).toBe(0);
         expect(pool.pendingCount).toBe(2);
@@ -122,11 +128,14 @@ describe('WorkerPool', () => {
     it('rejects an in-flight result that arrives after cancellation, then frees the worker', async () => {
         const pool = makePool(1);
         const stale = pool.runRegexOnText('a', 'f', ['kw'], 'docx', 'k1');
-        const staleCaught = stale.catch(e => e);
+        const staleCaught = stale.catch((e) => e);
 
         pool.cancelStale(pool.generation + 1);
         const fresh = pool.runRegexOnText('b', 'f', ['kw'], 'docx', 'k2');
-        const freshSettled = fresh.then(r => r, e => e);
+        const freshSettled = fresh.then(
+            (r) => r,
+            (e) => e,
+        );
 
         // The worker finishes the superseded job anyway; its result must not
         // reach the caller.
@@ -144,7 +153,7 @@ describe('WorkerPool', () => {
     it('surfaces worker error messages as rejections', async () => {
         const pool = makePool(1);
         const task = pool.runRegexOnText('a', 'f', ['kw'], 'docx', 'k1');
-        const caught = task.catch(e => e);
+        const caught = task.catch((e) => e);
 
         instances[0].respond({ type: 'error', error: 'Worker processing failed' });
         const err = await caught;
@@ -166,13 +175,13 @@ describe('WorkerPool', () => {
         const active2 = pool.runRegexOnText('b', 'f', ['kw'], 'docx', 'k2');
         const queued = pool.runRegexOnText('c', 'f', ['kw'], 'docx', 'k3');
 
-        const settled = Promise.all([active1, active2, queued].map(p => p.catch(e => e)));
+        const settled = Promise.all([active1, active2, queued].map((p) => p.catch((e) => e)));
         pool.terminate();
 
         for (const err of await settled) {
             expect(err).toBeInstanceOf(CancelledTaskError);
         }
-        expect(instances.every(w => w.terminated)).toBe(true);
+        expect(instances.every((w) => w.terminated)).toBe(true);
         expect(pool.pendingCount).toBe(0);
         expect(pool.initialized).toBe(false);
     });

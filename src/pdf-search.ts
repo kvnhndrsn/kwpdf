@@ -87,7 +87,8 @@ export function buildOffsetMap(textItems) {
 }
 
 export function findStartItem(pos, offsets, items) {
-    let lo = 0, hi = offsets.length - 1;
+    let lo = 0,
+        hi = offsets.length - 1;
     while (lo < hi) {
         const mid = (lo + hi + 1) >>> 1;
         if (offsets[mid] <= pos) lo = mid;
@@ -97,7 +98,8 @@ export function findStartItem(pos, offsets, items) {
 }
 
 export function findEndItem(endPos, startIdx, offsets, items) {
-    let lo = startIdx, hi = offsets.length - 1;
+    let lo = startIdx,
+        hi = offsets.length - 1;
     while (lo < hi) {
         const mid = (lo + hi) >>> 1;
         const itemEnd = offsets[mid] + items[mid].text.length;
@@ -120,17 +122,15 @@ export function computeMatchBoxes(matchStart, matchEnd, viewport, textItems, off
     const start = findStartItem(matchStart, offsetMap.offsets, textItems);
     const end = findEndItem(matchEnd, start.index, offsetMap.offsets, textItems);
 
-    const startCharFrac = start.item.text.length > 0
-        ? (matchStart - start.charStart) / start.item.text.length : 0;
-    const endCharFrac = end.item.text.length > 0
-        ? (matchEnd - end.charStart) / end.item.text.length : 1;
+    const startCharFrac = start.item.text.length > 0 ? (matchStart - start.charStart) / start.item.text.length : 0;
+    const endCharFrac = end.item.text.length > 0 ? (matchEnd - end.charStart) / end.item.text.length : 1;
 
     const transform = viewport && viewport.transform;
 
     if (!transform) {
         const offsetY = viewport.offsetY || 0;
         const sx = start.item.transform[4] + startCharFrac * start.item.width;
-        const sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
+        const sy = viewport.height + offsetY - (start.item.transform[5] + start.item.height);
         const endX = end.item.transform[4] + endCharFrac * end.item.width;
         const height = start.item.height;
         const width = Math.max(endX - sx, 4);
@@ -212,7 +212,13 @@ export async function precomputeAllSearches() {
 
             if (state.searchCache[canonical] === undefined) state.searchCache[canonical] = [];
 
-            const coords = computeMatchCoords(match.index, match.index + match[0].length, viewport, textItems, offsetMap);
+            const coords = computeMatchCoords(
+                match.index,
+                match.index + match[0].length,
+                viewport,
+                textItems,
+                offsetMap,
+            );
             state.searchCache[canonical].push({ page: pageNum, ...coords });
         }
     }
@@ -249,7 +255,13 @@ async function computeSearchForQuery(query) {
         while ((match = localRegex.exec(pageText)) !== null) {
             if (!normalizeKeywordMatch(match)) continue;
 
-            const coords = computeMatchCoords(match.index, match.index + match[0].length, viewport, textItems, offsetMap);
+            const coords = computeMatchCoords(
+                match.index,
+                match.index + match[0].length,
+                viewport,
+                textItems,
+                offsetMap,
+            );
             results.push({ page: pageNum, ...coords });
         }
     }
@@ -294,10 +306,8 @@ function appendOcrResults(keyword) {
     if (!matches || matches.length === 0) return;
     for (const m of matches) {
         const hasCoords = m.x !== undefined;
-        const dup = state.searchResults.some(r =>
-            r.page === m.page && (hasCoords
-                ? Math.abs(r.x - m.x) < 1 && Math.abs(r.y - m.y) < 1
-                : r.ocr)
+        const dup = state.searchResults.some(
+            (r) => r.page === m.page && (hasCoords ? Math.abs(r.x - m.x) < 1 && Math.abs(r.y - m.y) < 1 : r.ocr),
         );
         if (dup) continue;
         if (hasCoords) {
@@ -380,7 +390,7 @@ export async function performSearch(query) {
     let canonicalQuery = query;
     if (state.searchCache[query] === undefined) {
         const lower = query.toLowerCase();
-        const found = (KEYWORDS || []).find(k => k.toLowerCase() === lower);
+        const found = (KEYWORDS || []).find((k) => k.toLowerCase() === lower);
         if (found && state.searchCache[found] !== undefined) canonicalQuery = found;
     }
 
@@ -455,9 +465,7 @@ export function cycleSearch(query) {
             dom.navGroup.classList.add('active');
             dom.navSep.style.display = '';
             const wasSameQuery = prevKeyword === query && state.currentMatchIndex >= 0;
-            state.currentMatchIndex = wasSameQuery
-                ? (state.currentMatchIndex + 1) % state.searchResults.length
-                : 0;
+            state.currentMatchIndex = wasSameQuery ? (state.currentMatchIndex + 1) % state.searchResults.length : 0;
             dom.matchTotal.textContent = String(state.searchResults.length);
             dom.matchInput.max = String(state.searchResults.length);
             dom.matchInput.value = String(state.currentMatchIndex + 1);

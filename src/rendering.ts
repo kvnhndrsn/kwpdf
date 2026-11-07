@@ -60,7 +60,7 @@ function getPathParts(file, baseFolderName) {
 }
 
 export function setActiveCardFromUrl(url) {
-    document.querySelectorAll('.file.active').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.file.active').forEach((el) => el.classList.remove('active'));
     const fileItem = document.querySelector(`.tree-file-item[data-url="${CSS.escape(url)}"]`);
     if (fileItem) {
         const fileSpan = fileItem.querySelector('.file');
@@ -78,8 +78,8 @@ export function renderPlaceholderCard(fileName, url, file) {
 
 export function renderCard(fileName, counts, url, file) {
     const existing = state.docDataCache[url];
-    const baseName = file ? getPathParts(file, null).name : (existing?.name || fileName);
-    const folder = file ? getPathParts(file, null).folder : (existing?.folder || state.basePath || '');
+    const baseName = file ? getPathParts(file, null).name : existing?.name || fileName;
+    const folder = file ? getPathParts(file, null).folder : existing?.folder || state.basePath || '';
     const type = getFileType(fileName);
     state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url, type };
 
@@ -97,8 +97,8 @@ export function renderCard(fileName, counts, url, file) {
 
 export function renderNoMatchCard(fileName, url, file) {
     const existing = state.docDataCache[url];
-    const baseName = file ? getPathParts(file, null).name : (existing?.name || fileName);
-    const folder = file ? getPathParts(file, null).folder : (existing?.folder || state.basePath || '');
+    const baseName = file ? getPathParts(file, null).name : existing?.name || fileName;
+    const folder = file ? getPathParts(file, null).folder : existing?.folder || state.basePath || '';
     const type = getFileType(fileName);
     const counts = {};
     state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url, type };
@@ -117,7 +117,7 @@ export function renderNoMatchCard(fileName, url, file) {
 
 function buildTreeData() {
     const root = { name: '', children: {}, docs: [] };
-    Object.values(state.docDataCache).forEach(doc => {
+    Object.values(state.docDataCache).forEach((doc) => {
         const folder = doc.folder || '';
         const parts = folder ? folder.split('/').filter(Boolean) : [];
         let current = root;
@@ -148,7 +148,7 @@ function renderTree(node, path = '') {
         folderIcon.alt = 'folder';
         folderSpan.appendChild(folderIcon);
         folderSpan.appendChild(document.createTextNode(' ' + name));
-        folderSpan.addEventListener('click', function(e) {
+        folderSpan.addEventListener('click', function (e) {
             e.stopPropagation();
             this.classList.toggle('open');
             const nested = this.nextElementSibling;
@@ -187,7 +187,7 @@ function renderTree(node, path = '') {
             }
         }
 
-        const totalMatches = (Object.values((doc as any).counts || {}).reduce((a: any, b: any) => a + b, 0) as number);
+        const totalMatches = Object.values((doc as any).counts || {}).reduce((a: any, b: any) => a + b, 0) as number;
         if (totalMatches > 0) {
             const countSpan = document.createElement('span');
             countSpan.className = 'tree-count';
@@ -196,7 +196,7 @@ function renderTree(node, path = '') {
             // the counts the scan reports.
             countSpan.textContent = String(totalMatches);
 
-            countSpan.addEventListener('click', function(e) {
+            countSpan.addEventListener('click', function (e) {
                 e.stopPropagation();
 
                 const onSameDoc = state.currentDocUrl === doc.url;
@@ -244,7 +244,7 @@ function renderTree(node, path = '') {
             searchCountSpan.textContent = String(displayText);
             searchCountSpan.title = isActive ? 'Click for next match' : `Click to view ${searchCount} matches`;
 
-            searchCountSpan.addEventListener('click', function(e) {
+            searchCountSpan.addEventListener('click', function (e) {
                 e.stopPropagation();
                 if (!state.globalSearchQuery) return;
 
@@ -272,7 +272,7 @@ function renderTree(node, path = '') {
             fileSpan.appendChild(searchCountSpan);
         }
 
-        fileSpan.addEventListener('click', function(e) {
+        fileSpan.addEventListener('click', function (e) {
             e.stopPropagation();
             const onSameDoc = state.currentDocUrl === doc.url;
 
@@ -290,14 +290,15 @@ function renderTree(node, path = '') {
 
             if (state.globalSearchQuery) {
                 const tryActivate = () => {
-                    const isDocReady = doc.type === 'pdf'
-                        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
-                        : !!state.docContentCache[doc.url];
+                    const isDocReady =
+                        doc.type === 'pdf'
+                            ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
+                            : !!state.docContentCache[doc.url];
                     if (isDocReady) {
                         state.globalSearchActiveDoc = doc.url;
                         fn.activateGlobalSearch();
                         const urls = Object.keys(state.globalSearchResults)
-                            .filter(u => state.globalSearchResults[u] > 0)
+                            .filter((u) => state.globalSearchResults[u] > 0)
                             .sort((a, b) => {
                                 const na = (state.docDataCache[a]?.name || a).toLowerCase();
                                 const nb = (state.docDataCache[b]?.name || b).toLowerCase();
@@ -364,7 +365,8 @@ function renderResultsAreaNow(): void {
     dom.resultsArea.appendChild(treeUl);
 
     if (Object.keys(state.docDataCache).length === 0) {
-        dom.resultsArea.innerHTML = '<div class="drop-zone-empty"><div class="drop-zone-empty-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 4L24 32M24 4L16 12M24 4L32 12"/><path d="M8 28L8 40C8 41.1 8.9 42 10 42L38 42C39.1 42 40 41.1 40 40L40 28"/></svg></div><h2 class="drop-zone-empty-title">Drop files to begin scanning</h2><p class="drop-zone-empty-text">PDF &middot; DOCX &middot; ZIP &mdash; any folder or archive</p></div>';
+        dom.resultsArea.innerHTML =
+            '<div class="drop-zone-empty"><div class="drop-zone-empty-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 4L24 32M24 4L16 12M24 4L32 12"/><path d="M8 28L8 40C8 41.1 8.9 42 10 42L38 42C39.1 42 40 41.1 40 40L40 28"/></svg></div><h2 class="drop-zone-empty-title">Drop files to begin scanning</h2><p class="drop-zone-empty-text">PDF &middot; DOCX &middot; ZIP &mdash; any folder or archive</p></div>';
     }
 
     if (state.currentDocUrl) {
@@ -416,7 +418,9 @@ export function updateSidebarBadge() {
         }
     }
 
-    const curFileItem = state.currentDocUrl ? document.querySelector(`.tree-file-item[data-url="${CSS.escape(state.currentDocUrl)}"]`) : null;
+    const curFileItem = state.currentDocUrl
+        ? document.querySelector(`.tree-file-item[data-url="${CSS.escape(state.currentDocUrl)}"]`)
+        : null;
     if (curFileItem) {
         const countSpan = curFileItem.querySelector('.tree-count');
         if (countSpan) {
@@ -435,11 +439,11 @@ export function updateSidebarBadge() {
         }
     }
 
-    document.querySelectorAll('.kw-grid-cell').forEach(cell => {
+    document.querySelectorAll('.kw-grid-cell').forEach((cell) => {
         const k = (cell as HTMLElement).dataset.keyword;
         const total = parseInt((cell as HTMLElement).dataset.count) || 0;
         const countSpan = cell.querySelector('.kw-cell-count');
-        
+
         const isActiveKeyword = k === state.activeKeyword;
         const isAllKeywordActive = state.allKeywordMode && k === currentKeyword;
 
@@ -475,11 +479,20 @@ export function updateKeywordGrid(url) {
     if (ocrBtn) {
         if (fn.isOcrEnabled() && doc.type === 'pdf') {
             const ocrState = fn.getOcrState(url);
-            ocrBtn.className = 'kw-ocr-btn' + (ocrState && ocrState.status === 'done' ? ' active' : ocrState && ocrState.status === 'processing' ? ' ocr-pulsing' : '');
+            ocrBtn.className =
+                'kw-ocr-btn' +
+                (ocrState && ocrState.status === 'done'
+                    ? ' active'
+                    : ocrState && ocrState.status === 'processing'
+                      ? ' ocr-pulsing'
+                      : '');
             ocrBtn.textContent = ocrState && ocrState.status === 'done' ? 'OCR\u2713' : 'OCR';
             ocrBtn.title = 'Run OCR on this file';
             ocrBtn.style.display = '';
-            ocrBtn.onclick = (e) => { e.stopPropagation(); fn.toggleOcrForFile(url); };
+            ocrBtn.onclick = (e) => {
+                e.stopPropagation();
+                fn.toggleOcrForFile(url);
+            };
         } else {
             ocrBtn.style.display = 'none';
         }
@@ -501,7 +514,7 @@ export function updateKeywordGrid(url) {
         }
     }
 
-    keywords.forEach(k => {
+    keywords.forEach((k) => {
         const count = doc.counts[k] || 0;
         if (count <= 0) return;
 
@@ -569,9 +582,10 @@ export function finishResultsIfComplete(): void {
     if (state.globalSearchQuery) {
         fn.performGlobalSearch(state.globalSearchQuery);
     } else {
-        dom.statusBar.textContent = state.totalMatchesFound === 0
-            ? 'No matches found'
-            : `${state.totalMatchesFound} matches across ${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''}`;
+        dom.statusBar.textContent =
+            state.totalMatchesFound === 0
+                ? 'No matches found'
+                : `${state.totalMatchesFound} matches across ${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''}`;
     }
     if (state.currentDocUrl) {
         updateKeywordGrid(state.currentDocUrl);

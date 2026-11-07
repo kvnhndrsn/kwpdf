@@ -12,10 +12,7 @@ export type ViewportTransform = number[];
 
 /** Apply a PDF → viewport transform matrix to a point in PDF user space. */
 export function projectPoint(m: ViewportTransform, x: number, y: number): [number, number] {
-    return [
-        x * m[0] + y * m[2] + m[4],
-        x * m[1] + y * m[3] + m[5],
-    ];
+    return [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]];
 }
 
 /** Unit advance direction (in PDF user space) of a text item's glyph run. */
@@ -59,18 +56,17 @@ export function projectItemBox(
     // font scale baked into the transform must be normalized out before using
     // it as a direction (otherwise a 10pt run would be scaled ten times over).
     const s = Math.hypot(t[0], t[1]) || 1;
-    const ax = t[0] / s, ay = t[1] / s; // advance direction
-    const px = t[2] / s, py = t[3] / s; // perpendicular ("up" in glyph space)
+    const ax = t[0] / s,
+        ay = t[1] / s; // advance direction
+    const px = t[2] / s,
+        py = t[3] / s; // perpendicular ("up" in glyph space)
 
-    const at = (u: number, v: number): [number, number] => projectPoint(
-        m,
-        t[4] + ax * u + px * v,
-        t[5] + ay * u + py * v,
-    );
+    const at = (u: number, v: number): [number, number] =>
+        projectPoint(m, t[4] + ax * u + px * v, t[5] + ay * u + py * v);
 
     const corners = [at(lo, 0), at(hi, 0), at(hi, h), at(lo, h)];
-    const xs = corners.map(c => c[0]);
-    const ys = corners.map(c => c[1]);
+    const xs = corners.map((c) => c[0]);
+    const ys = corners.map((c) => c[1]);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     return {

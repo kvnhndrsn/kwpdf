@@ -1,4 +1,11 @@
-import type { PageCacheEntry, RawSearchResult, TextCoords, DocDataCacheEntry, PdfCacheEntry, DocxCacheEntry } from './types';
+import type {
+    PageCacheEntry,
+    RawSearchResult,
+    TextCoords,
+    DocDataCacheEntry,
+    PdfCacheEntry,
+    DocxCacheEntry,
+} from './types';
 import { projectItemBox, unionBoxes, sameTextLine, type ProjectedBox } from './pdf-coords';
 
 const GS_CHUNK_SIZE = 20;
@@ -110,11 +117,7 @@ function findItemAt(offsets: number[], items: ItemOffsets['items'], index: numbe
     return lo;
 }
 
-export function getTextCoords(
-    cached: PageCacheEntry,
-    startIndex: number,
-    endIndex: number,
-): TextCoords | null {
+export function getTextCoords(cached: PageCacheEntry, startIndex: number, endIndex: number): TextCoords | null {
     if (!cached || !cached.items) return null;
 
     const table = getItemOffsets(cached);
@@ -164,11 +167,15 @@ export function getTextCoords(
             endX: box.x + box.width,
             endY: box.y + box.height,
             height: box.height,
-            boxes
+            boxes,
         };
     }
 
-    let startY = 0, startX = 0, endY = 0, endX = 0, height = 0;
+    let startY = 0,
+        startX = 0,
+        endY = 0,
+        endX = 0,
+        height = 0;
     let foundStart = false;
     let foundEnd = false;
 
@@ -180,7 +187,7 @@ export function getTextCoords(
         if (!foundStart && startIndex >= itemStart && startIndex < itemEnd) {
             const frac = (startIndex - itemStart) / item.text.length;
             startX = item.transform[4] + frac * item.width;
-            startY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
+            startY = viewport.height + (viewport.offsetY || 0) - (item.transform[5] + item.height);
             height = item.height;
             foundStart = true;
         }
@@ -188,14 +195,17 @@ export function getTextCoords(
         if (endIndex > itemStart && endIndex <= itemEnd) {
             const frac = (endIndex - itemStart) / item.text.length;
             endX = item.transform[4] + frac * item.width;
-            endY = (viewport.height + (viewport.offsetY || 0)) - (item.transform[5] + item.height);
+            endY = viewport.height + (viewport.offsetY || 0) - (item.transform[5] + item.height);
             foundEnd = true;
             break;
         }
     }
 
     if (!foundStart) return null;
-    if (!foundEnd) { endX = startX + 50; endY = startY; }
+    if (!foundEnd) {
+        endX = startX + 50;
+        endY = startY;
+    }
 
     return { startX, startY, endX, endY, height };
 }
@@ -252,7 +262,7 @@ export function countMatchesInAllDocs(
     query: string,
     cancelRef: { cancelled: boolean },
 ): Promise<GlobalCounts | null> {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         const trimmed = query.trim();
         if (!trimmed) {
             resolve({ results: {}, totalMatches: 0, filesWithMatches: 0 });

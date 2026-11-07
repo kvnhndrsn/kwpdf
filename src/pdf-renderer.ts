@@ -3,11 +3,7 @@ import * as dom from './dom';
 import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
 import { fitScaleForPixels } from './canvas-budget';
-import {
-    getRawTextContent,
-    putRawTextContent,
-    clearRawTextContent,
-} from './raw-text-store';
+import { getRawTextContent, putRawTextContent, clearRawTextContent } from './raw-text-store';
 import { TextLayer } from 'pdfjs-dist';
 
 function scheduleIdle(fn, timeout = 300) {
@@ -30,7 +26,6 @@ const textLayers = new Map();
 // may clear shared render state, so a late-finishing render cannot clobber a
 // newer one.
 const renderTokens = new Map();
-
 
 function getCanvasContext(canvas) {
     try {
@@ -62,9 +57,14 @@ function promiseMapConcurrent(items, fn, concurrency) {
         function enqueue() {
             while (executing.size < concurrency && i < items.length) {
                 const idx = i++;
-                const p = Promise.resolve().then(() => fn(items[idx])).then(r => results.push(r));
+                const p = Promise.resolve()
+                    .then(() => fn(items[idx]))
+                    .then((r) => results.push(r));
                 executing.add(p);
-                const clean = () => { executing.delete(p); enqueue(); };
+                const clean = () => {
+                    executing.delete(p);
+                    enqueue();
+                };
                 p.then(clean, clean);
             }
             if (executing.size === 0) resolve(results);
@@ -85,7 +85,9 @@ export function teardownPdf() {
 
     for (const [, t] of state.renderTasks) {
         if (t && typeof t.cancel === 'function') {
-            try { t.cancel(); } catch (e) {}
+            try {
+                t.cancel();
+            } catch (e) {}
         }
     }
     state.renderTasks.clear();
@@ -94,7 +96,11 @@ export function teardownPdf() {
     removeScrollListener();
 
     if (state.pdfDoc) {
-        try { state.pdfDoc.destroy(); } catch (e) { console.warn('Error destroying previous PDF:', e); }
+        try {
+            state.pdfDoc.destroy();
+        } catch (e) {
+            console.warn('Error destroying previous PDF:', e);
+        }
     }
     state.pdfDoc = null;
     state.renderedPages.clear();
@@ -123,8 +129,7 @@ export async function setupVirtualPages() {
     for (let start = 1; start <= state.totalPages; start += VIRTUAL_PAGE_CHUNK) {
         const end = Math.min(start + VIRTUAL_PAGE_CHUNK - 1, state.totalPages);
         const pages = await Promise.all(
-            Array.from({ length: end - start + 1 }, (_, i) =>
-                state.pdfDoc.getPage(start + i).catch(() => null))
+            Array.from({ length: end - start + 1 }, (_, i) => state.pdfDoc.getPage(start + i).catch(() => null)),
         );
         if (!isCurrentGeneration(generation)) return;
 
@@ -157,7 +162,7 @@ export async function setupVirtualPages() {
         // Let the browser paint the pages mounted so far before resolving the
         // next batch, instead of blocking the first visible page behind all of them.
         if (end < state.totalPages) {
-            await new Promise(r => requestAnimationFrame(() => r(null)));
+            await new Promise((r) => requestAnimationFrame(() => r(null)));
         }
     }
 
@@ -196,17 +201,23 @@ function setupPageObserver() {
 
     addScrollListener();
 
-    state.pageObserver = new IntersectionObserver(() => {
-        if (_rendering) { _needsRefresh = true; return; }
-        if (_isScrolling) {
-            _needsRefresh = true;
-            return;
-        }
-        clearTimeout(_observerTimer);
-        _observerTimer = setTimeout(() => refreshVisiblePages(), 50);
-    }, { root: dom.viewerScroll, rootMargin: '1200px' });
+    state.pageObserver = new IntersectionObserver(
+        () => {
+            if (_rendering) {
+                _needsRefresh = true;
+                return;
+            }
+            if (_isScrolling) {
+                _needsRefresh = true;
+                return;
+            }
+            clearTimeout(_observerTimer);
+            _observerTimer = setTimeout(() => refreshVisiblePages(), 50);
+        },
+        { root: dom.viewerScroll, rootMargin: '1200px' },
+    );
 
-    document.querySelectorAll('[id^="page-"]').forEach(el => state.pageObserver.observe(el));
+    document.querySelectorAll('[id^="page-"]').forEach((el) => state.pageObserver.observe(el));
 }
 
 // ── viewport range helper (used by setZoom) ──
@@ -256,7 +267,9 @@ function cancelNonVisibleRenders(visibleSet) {
     for (const [pn, t] of state.renderTasks) {
         if (!visibleSet.has(pn)) {
             if (t && typeof t.cancel === 'function') {
-                try { t.cancel(); } catch (e) {}
+                try {
+                    t.cancel();
+                } catch (e) {}
             }
             state.renderTasks.delete(pn);
         }
@@ -266,7 +279,9 @@ function cancelNonVisibleRenders(visibleSet) {
 function cancelAllRenders() {
     for (const t of state.renderTasks.values()) {
         if (t && typeof t.cancel === 'function') {
-            try { t.cancel(); } catch (e) {}
+            try {
+                t.cancel();
+            } catch (e) {}
         }
     }
     state.renderTasks.clear();
@@ -293,7 +308,9 @@ function evictDistantPages(keep: Set<number>) {
 
         const layerRef = textLayers.get(pageNum);
         if (layerRef) {
-            try { layerRef.layer.cancel(); } catch (e) {}
+            try {
+                layerRef.layer.cancel();
+            } catch (e) {}
             textLayers.delete(pageNum);
         }
         el.querySelector('.textLayer')?.remove();
@@ -313,52 +330,56 @@ async function refreshVisiblePages() {
     try {
         const gen = ++renderGen;
 
-    const scrollTop = dom.viewerScroll.scrollTop;
-    const scrollBottom = scrollTop + dom.viewerScroll.clientHeight;
-    const scrollCenter = (scrollTop + scrollBottom) / 2;
+        const scrollTop = dom.viewerScroll.scrollTop;
+        const scrollBottom = scrollTop + dom.viewerScroll.clientHeight;
+        const scrollCenter = (scrollTop + scrollBottom) / 2;
 
-    const visible = [];
-    for (let i = 1; i <= state.totalPages; i++) {
-        const el = document.getElementById('page-' + i);
-        if (!el) continue;
-        const top = el.offsetTop;
-        const bottom = top + el.offsetHeight;
-        if (bottom > scrollTop && top < scrollBottom) {
-            visible.push({ pn: i, dist: Math.abs((top + bottom) / 2 - scrollCenter) });
+        const visible = [];
+        for (let i = 1; i <= state.totalPages; i++) {
+            const el = document.getElementById('page-' + i);
+            if (!el) continue;
+            const top = el.offsetTop;
+            const bottom = top + el.offsetHeight;
+            if (bottom > scrollTop && top < scrollBottom) {
+                visible.push({ pn: i, dist: Math.abs((top + bottom) / 2 - scrollCenter) });
+            }
+        }
+        visible.sort((a, b) => a.dist - b.dist);
+
+        if (visible.length === 0) return;
+
+        const visibleSet = new Set(visible.map((p) => p.pn));
+        cancelNonVisibleRenders(visibleSet);
+
+        await new Promise((r) => setTimeout(r, 0));
+        if (gen !== renderGen) return;
+
+        // Full-res visible pages with limited concurrency, center-first
+        const toRender = visible.filter((p) => pageNeedsRender(p.pn));
+        if (toRender.length) {
+            await promiseMapConcurrent(
+                toRender,
+                (p) => renderPageNow(p.pn).catch(() => {}),
+                Math.min(2, MAX_CONCURRENT_RENDERS),
+            );
+        }
+
+        // Keep visible pages plus a generous neighbourhood; the rest are re-rendered
+        // on demand when scrolled back to.
+        const keep = new Set<number>(visibleSet);
+        for (let p = state.currentPage - EVICT_RADIUS; p <= state.currentPage + EVICT_RADIUS; p++) {
+            if (p >= 1 && p <= state.totalPages) keep.add(p);
+        }
+        evictDistantPages(keep);
+
+        scheduleIdle(() => prerenderNearPages(), 300);
+    } finally {
+        _rendering = false;
+        if (_needsRefresh) {
+            _needsRefresh = false;
+            refreshVisiblePages();
         }
     }
-    visible.sort((a, b) => a.dist - b.dist);
-
-    if (visible.length === 0) return;
-
-    const visibleSet = new Set(visible.map(p => p.pn));
-    cancelNonVisibleRenders(visibleSet);
-
-    await new Promise(r => setTimeout(r, 0));
-    if (gen !== renderGen) return;
-
-    // Full-res visible pages with limited concurrency, center-first
-    const toRender = visible.filter(p => pageNeedsRender(p.pn));
-    if (toRender.length) {
-        await promiseMapConcurrent(toRender, p => renderPageNow(p.pn).catch(() => {}), Math.min(2, MAX_CONCURRENT_RENDERS));
-    }
-
-    // Keep visible pages plus a generous neighbourhood; the rest are re-rendered
-    // on demand when scrolled back to.
-    const keep = new Set<number>(visibleSet);
-    for (let p = state.currentPage - EVICT_RADIUS; p <= state.currentPage + EVICT_RADIUS; p++) {
-        if (p >= 1 && p <= state.totalPages) keep.add(p);
-    }
-    evictDistantPages(keep);
-
-    scheduleIdle(() => prerenderNearPages(), 300);
-} finally {
-    _rendering = false;
-    if (_needsRefresh) {
-        _needsRefresh = false;
-        refreshVisiblePages();
-    }
-}
 }
 
 // ── render a single page ──
@@ -420,7 +441,8 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         // A 0-sized canvas can't be rendered into and is invisible-but-present;
         // an unpainted alpha:false canvas is opaque black. Never let either ship.
         if (!canvas.width || !canvas.height) {
-            el.innerHTML = '<div class="page-error" style="padding:20px;text-align:center;color:var(--grey-500)">Page too large to display</div>';
+            el.innerHTML =
+                '<div class="page-error" style="padding:20px;text-align:center;color:var(--grey-500)">Page too large to display</div>';
             return;
         }
         // pdf.js primes the page itself (beginDrawing fills #fff), so this is
@@ -459,49 +481,54 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         // Fire-and-forget text content fetch for text layer & highlights.
         // On resolve, rebuild text layer & highlights if page is still displayed.
         if (!state.textPageCache[pageNum]) {
-            page.getTextContent().then(async textContent => {
-                const processed = await processTextContentAsync(textContent);
-                if (!isCurrentGeneration(generation)) return;
-                if (renderTokens.get(pageNum) !== token) return;
+            page.getTextContent()
+                .then(async (textContent) => {
+                    const processed = await processTextContentAsync(textContent);
+                    if (!isCurrentGeneration(generation)) return;
+                    if (renderTokens.get(pageNum) !== token) return;
 
-                state.textPageCache[pageNum] = {
-                    text: processed.text,
-                    viewport: {
-                        width: vp1.width,
-                        height: vp1.height,
-                        offsetX: vp1.offsetX,
-                        offsetY: vp1.offsetY,
-                        transform: vp1.transform,
-                        rotation: vp1.rotation
-                    },
-                    items: processed.items,
-                };
-                state.pageHeights[pageNum] = vp1.height;
-                // Raw TextContent goes to a bounded module-local store, never
-                // into docTextCache/textPageCache: those entries are shared by
-                // reference and _size is computed before `raw` exists, so
-                // evictCaches() could never reclaim it.
-                putRawTextContent(pageNum, textContent);
+                    state.textPageCache[pageNum] = {
+                        text: processed.text,
+                        viewport: {
+                            width: vp1.width,
+                            height: vp1.height,
+                            offsetX: vp1.offsetX,
+                            offsetY: vp1.offsetY,
+                            transform: vp1.transform,
+                            rotation: vp1.rotation,
+                        },
+                        items: processed.items,
+                    };
+                    state.pageHeights[pageNum] = vp1.height;
+                    // Raw TextContent goes to a bounded module-local store, never
+                    // into docTextCache/textPageCache: those entries are shared by
+                    // reference and _size is computed before `raw` exists, so
+                    // evictCaches() could never reclaim it.
+                    putRawTextContent(pageNum, textContent);
 
-                const pe = document.getElementById('page-' + pageNum);
-                if (pe && pe.isConnected && pe.querySelector('canvas')) {
-                    const rect = pe.getBoundingClientRect();
-                    const viewH = dom.viewerScroll.clientHeight;
-                    if (rect.bottom > -500 && rect.top < viewH + 500) {
-                        requestAnimationFrame(() => buildTextLayer(pe, pageNum));
-                        if (state.searchResults.length > 0) {
-                            scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
+                    const pe = document.getElementById('page-' + pageNum);
+                    if (pe && pe.isConnected && pe.querySelector('canvas')) {
+                        const rect = pe.getBoundingClientRect();
+                        const viewH = dom.viewerScroll.clientHeight;
+                        if (rect.bottom > -500 && rect.top < viewH + 500) {
+                            requestAnimationFrame(() => buildTextLayer(pe, pageNum));
+                            if (state.searchResults.length > 0) {
+                                scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
+                            }
                         }
                     }
-                }
-            }).catch(() => {});
+                })
+                .catch(() => {});
         }
     } catch (err) {
         if ((err as Error).name !== 'RenderingCancelledException' && isCurrentGeneration(generation)) {
             console.warn('Render error:', (err as Error).message);
             const pe = document.getElementById('page-' + pageNum);
             if (pe) {
-                pe.innerHTML = '<div class="page-error" style="padding:20px;text-align:center;color:var(--grey-500)">Render error: ' + (err as Error).message + '</div>';
+                pe.innerHTML =
+                    '<div class="page-error" style="padding:20px;text-align:center;color:var(--grey-500)">Render error: ' +
+                    (err as Error).message +
+                    '</div>';
             }
         }
     } finally {
@@ -524,7 +551,9 @@ function buildTextLayer(el, pageNum) {
     if (existingRef) {
         if (existingRef.div.isConnected) return;
         textLayers.delete(pageNum);
-        try { existingRef.layer.cancel(); } catch (e) {}
+        try {
+            existingRef.layer.cancel();
+        } catch (e) {}
     }
 
     const cached = state.textPageCache[pageNum];
@@ -586,7 +615,9 @@ function requestIdleOrTimeout(run) {
 
 function teardownTextLayers() {
     for (const [, ref] of textLayers) {
-        try { ref.layer.cancel(); } catch (e) {}
+        try {
+            ref.layer.cancel();
+        } catch (e) {}
     }
     textLayers.clear();
     clearRawTextContent();
@@ -598,7 +629,9 @@ async function updateTextLayersAtScale(scale) {
         try {
             if (!ref.div.isConnected) {
                 textLayers.delete(pageNum);
-                try { ref.layer.cancel(); } catch (e) {}
+                try {
+                    ref.layer.cancel();
+                } catch (e) {}
                 continue;
             }
             const page = await state.pdfDoc.getPage(pageNum);
@@ -619,7 +652,7 @@ function prerenderNearPages() {
         pages.push(pageNum);
     }
     if (pages.length === 0) return;
-    promiseMapConcurrent(pages, pn => renderPageNow(pn).catch(() => {}), 1);
+    promiseMapConcurrent(pages, (pn) => renderPageNow(pn).catch(() => {}), 1);
 }
 
 // ── public helpers ──
@@ -669,7 +702,9 @@ export function setZoom(newScale, force = false) {
     if (!anchorEl) {
         let minDist = Infinity;
         for (const el of document.querySelectorAll('[id^="page-"]')) {
-            const dist = Math.abs((el as HTMLElement).offsetTop + (el as HTMLElement).offsetHeight / 2 - viewportCenter);
+            const dist = Math.abs(
+                (el as HTMLElement).offsetTop + (el as HTMLElement).offsetHeight / 2 - viewportCenter,
+            );
             if (dist < minDist) {
                 minDist = dist;
                 anchorEl = el;
@@ -696,8 +731,8 @@ export function setZoom(newScale, force = false) {
         const baseH = state.pageHeights[pageNum] || 800;
         const cached = state.textPageCache[pageNum];
         const baseW = cached ? cached.viewport.width : 600;
-        canvas.style.width = (baseW * clampedScale) + 'px';
-        canvas.style.height = (baseH * clampedScale) + 'px';
+        canvas.style.width = baseW * clampedScale + 'px';
+        canvas.style.height = baseH * clampedScale + 'px';
     }
 
     cancelAllRenders();
@@ -756,10 +791,10 @@ export function startPrerender() {
             pagesWithMatches.add(r.page);
         }
     }
-    const toRender = [...pagesWithMatches].filter(pn => pageNeedsRender(pn));
+    const toRender = [...pagesWithMatches].filter((pn) => pageNeedsRender(pn));
     if (toRender.length === 0) return;
 
     scheduleIdle(() => {
-        promiseMapConcurrent(toRender, pn => renderPageNow(pn).catch(() => {}), Math.min(2, MAX_CONCURRENT_RENDERS));
+        promiseMapConcurrent(toRender, (pn) => renderPageNow(pn).catch(() => {}), Math.min(2, MAX_CONCURRENT_RENDERS));
     }, 100);
 }

@@ -19,7 +19,9 @@ try {
         encoding: 'utf8',
         cwd: __dirname,
     }).trim();
-} catch (e) { /* not a git checkout (tarball / CI export) — the date is optional */ }
+} catch (e) {
+    /* not a git checkout (tarball / CI export) — the date is optional */
+}
 
 const HASH_PLACEHOLDER = 'KWPBF_HASH_PLACEHOLDER_8c3a';
 
@@ -31,15 +33,17 @@ await esbuild.build({
     minify: true,
     define: {
         'process.env.NODE_ENV': '"production"',
-        'WORKER_BASE': '"utils/"',
-        '__BUNDLE_HASH__': '"' + HASH_PLACEHOLDER + '"',
-        '__COMMIT_DATE__': '"' + commitDate + '"',
+        WORKER_BASE: '"utils/"',
+        __BUNDLE_HASH__: '"' + HASH_PLACEHOLDER + '"',
+        __COMMIT_DATE__: '"' + commitDate + '"',
     },
 });
 
 const bundleContent = fs.readFileSync(path.join(dist, 'bundle.js'), 'utf8');
 
-function copy(src, dest) { fs.cpSync(path.join(__dirname, src), path.join(dist, dest), { recursive: true }); }
+function copy(src, dest) {
+    fs.cpSync(path.join(__dirname, src), path.join(dist, dest), { recursive: true });
+}
 
 copy('src/style.css', 'style.css');
 copy('src/manifest.json', 'manifest.json');

@@ -44,13 +44,17 @@ function loadMeasurements() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) measurementsByDoc = JSON.parse(raw);
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+        /* ignore */
+    }
 }
 
 function saveMeasurements() {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(measurementsByDoc));
-    } catch (e) { /* quota exceeded, ignore */ }
+    } catch (e) {
+        /* quota exceeded, ignore */
+    }
 }
 
 function loadScale() {
@@ -60,13 +64,17 @@ function loadScale() {
             const parsed = parseFloat(raw);
             if (!isNaN(parsed) && parsed >= 0.001 && parsed <= MAX_SCALE) scaleRatio = parsed;
         }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+        /* ignore */
+    }
 }
 
 function saveScale() {
     try {
         localStorage.setItem(SCALE_STORAGE_KEY, String(scaleRatio));
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+        /* ignore */
+    }
 }
 
 loadMeasurements();
@@ -131,7 +139,7 @@ export function getIntersection(p1, p2, p3, p4) {
         return {
             page: p1.page,
             x: p1.x + t * (p2.x - p1.x),
-            y: p1.y + t * (p2.y - p1.y)
+            y: p1.y + t * (p2.y - p1.y),
         };
     }
     return null;
@@ -143,13 +151,15 @@ export function decomposePolygon(points) {
 
     for (let i = 0; i < points.length; i++) {
         const next_i = (i + 1) % points.length;
-        const p1 = points[i], p2 = points[next_i];
+        const p1 = points[i],
+            p2 = points[next_i];
 
         for (let j = i + 2; j < points.length; j++) {
             if (i === 0 && j === points.length - 1) continue;
 
             const next_j = (j + 1) % points.length;
-            const p3 = points[j], p4 = points[next_j];
+            const p3 = points[j],
+                p4 = points[next_j];
 
             const intersection = getIntersection(p1, p2, p3, p4);
 
@@ -264,7 +274,7 @@ export function deactivateTool() {
         isMouseListening = false;
     }
     dom.viewerScroll.classList.remove('is-measuring');
-    ['measureDistBtn', 'measurePerimBtn', 'measureAreaBtn'].forEach(id => {
+    ['measureDistBtn', 'measurePerimBtn', 'measureAreaBtn'].forEach((id) => {
         const btn = document.getElementById(id);
         if (btn) btn.classList.remove('active-tool');
     });
@@ -342,7 +352,7 @@ export function cancelCalibration() {
 export function deleteMeasurement(id) {
     const url = getDocKey();
     if (!url || !measurementsByDoc[url]) return;
-    measurementsByDoc[url] = measurementsByDoc[url].filter(m => m.id !== id);
+    measurementsByDoc[url] = measurementsByDoc[url].filter((m) => m.id !== id);
     saveMeasurements();
     markCommittedDirty();
     renderAllMeasurements();
@@ -414,7 +424,10 @@ function handleCalibrationClick(e) {
     const scaleInput = document.getElementById('scaleInput') as HTMLInputElement;
     const meters = parseFloat(scaleInput?.value);
     if (isNaN(meters) || meters <= 0) {
-        if (scaleInput) { scaleInput.focus(); scaleInput.select(); }
+        if (scaleInput) {
+            scaleInput.focus();
+            scaleInput.select();
+        }
         return;
     }
 
@@ -448,7 +461,7 @@ function handleCalibrationClick(e) {
         return;
     }
 
-    const computedScale = calibrationMeters * 1000 * POINTS_PER_MM / pdfDist;
+    const computedScale = (calibrationMeters * 1000 * POINTS_PER_MM) / pdfDist;
     const clamped = Math.max(0.001, Math.min(MAX_SCALE, computedScale));
     const rounded = Math.round(clamped);
 
@@ -480,7 +493,7 @@ function finalizeDistance() {
         id: generateId(),
         type: 'distance',
         points: [p1, p2],
-        label
+        label,
     });
 
     pendingPoints = [];
@@ -523,7 +536,7 @@ function finalizePerimeter() {
         id: generateId(),
         type: 'polyline',
         points: pendingPoints.slice(),
-        label
+        label,
     });
 
     pendingPoints = [];
@@ -553,7 +566,7 @@ function finalizeArea() {
         if (poly.length < 3) continue;
 
         const pdfArea = simplePolygonArea(poly);
-        const realMm2 = pdfArea / (POINTS_PER_MM * POINTS_PER_MM) * scaleRatio * scaleRatio;
+        const realMm2 = (pdfArea / (POINTS_PER_MM * POINTS_PER_MM)) * scaleRatio * scaleRatio;
 
         const pdfPerim = polylineLength(poly, true);
         const realPerimMm = realWorldMm(pdfPerim);
@@ -565,7 +578,7 @@ function finalizeArea() {
             type: 'area',
             points: poly,
             label,
-            areaMm2: realMm2
+            areaMm2: realMm2,
         });
     }
 
@@ -603,7 +616,7 @@ function onMouseMove(e) {
             x1: calibrationPoint.x,
             y1: calibrationPoint.y,
             x2: snapped.x,
-            y2: snapped.y
+            y2: snapped.y,
         };
         schedulePreview();
         return;
@@ -624,7 +637,7 @@ function onMouseMove(e) {
         x1: last.x,
         y1: last.y,
         x2: snapped.x,
-        y2: snapped.y
+        y2: snapped.y,
     };
     schedulePreview();
 }
@@ -648,11 +661,13 @@ function markCommittedDirty() {
 }
 
 function clearMeasurementOverlays() {
-    document.querySelectorAll('.measure-layer').forEach(el => el.remove());
+    document.querySelectorAll('.measure-layer').forEach((el) => el.remove());
 }
 
 function clearPreview() {
-    document.querySelectorAll('.measure-line-ghost, .measure-label-ghost, .measure-fill-ghost').forEach(el => el.remove());
+    document
+        .querySelectorAll('.measure-line-ghost, .measure-label-ghost, .measure-fill-ghost')
+        .forEach((el) => el.remove());
 }
 
 function renderBase() {
@@ -725,29 +740,33 @@ function renderMeasurement(m) {
 function createLabel(x, y, color, text, measId) {
     const lbl = document.createElement('div');
     lbl.className = 'measure-label';
-    lbl.style.left = (x + 6) + 'px';
-    lbl.style.top = (y - 10) + 'px';
+    lbl.style.left = x + 6 + 'px';
+    lbl.style.top = y - 10 + 'px';
     lbl.style.color = '#000';
     lbl.style.borderColor = color;
-        if (measId) {
-            const shortText = text.split(' @ ')[0];
-            lbl.innerHTML = shortText.replace(/\n/g, '<br>') + '  \u00D7';
-            lbl.title = text + '\nClick to delete';
-            lbl.style.cursor = 'pointer';
-            lbl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteMeasurement(measId);
-            });
-            const escapedMeasId = CSS.escape(measId);
-            lbl.addEventListener('mouseenter', () => {
-                document.querySelectorAll('[data-meas-id="' + escapedMeasId + '"]').forEach(el => el.classList.add('measure-highlight'));
-            });
-            lbl.addEventListener('mouseleave', () => {
-                document.querySelectorAll('[data-meas-id="' + escapedMeasId + '"]').forEach(el => el.classList.remove('measure-highlight'));
-            });
-        } else {
-            lbl.textContent = text;
-        }
+    if (measId) {
+        const shortText = text.split(' @ ')[0];
+        lbl.innerHTML = shortText.replace(/\n/g, '<br>') + '  \u00D7';
+        lbl.title = text + '\nClick to delete';
+        lbl.style.cursor = 'pointer';
+        lbl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteMeasurement(measId);
+        });
+        const escapedMeasId = CSS.escape(measId);
+        lbl.addEventListener('mouseenter', () => {
+            document
+                .querySelectorAll('[data-meas-id="' + escapedMeasId + '"]')
+                .forEach((el) => el.classList.add('measure-highlight'));
+        });
+        lbl.addEventListener('mouseleave', () => {
+            document
+                .querySelectorAll('[data-meas-id="' + escapedMeasId + '"]')
+                .forEach((el) => el.classList.remove('measure-highlight'));
+        });
+    } else {
+        lbl.textContent = text;
+    }
     return lbl;
 }
 
@@ -758,8 +777,8 @@ const FINAL_LINEW = 1.5;
 function createTick(x, y, tickLen, tickW, deg, color, className, measId) {
     const tick = document.createElement('div');
     tick.className = className;
-    tick.style.left = (x - tickLen / 2) + 'px';
-    tick.style.top = (y - tickW / 2) + 'px';
+    tick.style.left = x - tickLen / 2 + 'px';
+    tick.style.top = y - tickW / 2 + 'px';
     tick.style.width = tickLen + 'px';
     tick.style.height = tickW + 'px';
     tick.style.background = color;
@@ -780,12 +799,12 @@ function renderDistance(p1, p2, label, isPreview, measId) {
     const dy = (p2.y - p1.y) * s;
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.5) return;
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
 
     const line = document.createElement('div');
     line.className = 'measure-line m-line';
-    line.style.left = (p1.x * s) + 'px';
-    line.style.top = (p1.y * s - 1) + 'px';
+    line.style.left = p1.x * s + 'px';
+    line.style.top = p1.y * s - 1 + 'px';
     line.style.width = len + 'px';
     line.style.height = FINAL_LINEW + 'px';
     line.style.background = color;
@@ -806,7 +825,7 @@ function renderDistance(p1, p2, label, isPreview, measId) {
 
     // Arrows positioned inside the line, pointing outward toward the end ticks
     const ARR = 0;
-    const aRad = angle * Math.PI / 180;
+    const aRad = (angle * Math.PI) / 180;
     addArrow(layer, p1.x * s + ARR * Math.cos(aRad), p1.y * s + ARR * Math.sin(aRad), angle + 180, color, measId);
     addArrow(layer, p2.x * s - ARR * Math.cos(aRad), p2.y * s - ARR * Math.sin(aRad), angle, color, measId);
 
@@ -840,7 +859,8 @@ function renderPerimeter(points, label, isPreview, measId) {
     const layer = getOrCreateLayer(pageEl);
 
     for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i], p2 = points[i + 1];
+        const p1 = points[i],
+            p2 = points[i + 1];
         drawLineSegment(layer, p1, p2, s, color, measId);
     }
 
@@ -854,11 +874,11 @@ function renderPerimeter(points, label, isPreview, measId) {
         if (idx === 0 && points.length > 1) {
             const dx = (points[1].x - p.x) * s;
             const dy = (points[1].y - p.y) * s;
-            deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+            deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
         } else if (idx === points.length - 1 && points.length > 1) {
             const dx = (p.x - points[idx - 1].x) * s;
             const dy = (p.y - points[idx - 1].y) * s;
-            deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+            deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
         }
         const tx = p.x * s;
         const ty = p.y * s;
@@ -870,10 +890,24 @@ function renderPerimeter(points, label, isPreview, measId) {
     if (points.length >= 2) {
         const ARR = 0;
         const a0Rad = Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x);
-        addArrow(layer, points[0].x * s + ARR * Math.cos(a0Rad), points[0].y * s + ARR * Math.sin(a0Rad), a0Rad * 180 / Math.PI + 180, color, measId);
+        addArrow(
+            layer,
+            points[0].x * s + ARR * Math.cos(a0Rad),
+            points[0].y * s + ARR * Math.sin(a0Rad),
+            (a0Rad * 180) / Math.PI + 180,
+            color,
+            measId,
+        );
         const n = points.length - 1;
         const aNRad = Math.atan2(points[n].y - points[n - 1].y, points[n].x - points[n - 1].x);
-        addArrow(layer, points[n].x * s - ARR * Math.cos(aNRad), points[n].y * s - ARR * Math.sin(aNRad), aNRad * 180 / Math.PI, color, measId);
+        addArrow(
+            layer,
+            points[n].x * s - ARR * Math.cos(aNRad),
+            points[n].y * s - ARR * Math.sin(aNRad),
+            (aNRad * 180) / Math.PI,
+            color,
+            measId,
+        );
     }
 
     if (label) {
@@ -898,7 +932,8 @@ function renderPendingPerimeter() {
     }
 
     // Ticks only at first and last point
-    const tickLen = 8, tickW = 2;
+    const tickLen = 8,
+        tickW = 2;
     for (const idx of [0, points.length - 1]) {
         if (idx < 0) continue;
         const p = points[idx];
@@ -906,11 +941,11 @@ function renderPendingPerimeter() {
         if (idx === 0 && points.length > 1) {
             const dx = (points[1].x - p.x) * s;
             const dy = (points[1].y - p.y) * s;
-            deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+            deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
         } else if (idx === points.length - 1 && points.length > 1) {
             const dx = (p.x - points[idx - 1].x) * s;
             const dy = (p.y - points[idx - 1].y) * s;
-            deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+            deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
         }
         const tx = p.x * s;
         const ty = p.y * s;
@@ -922,10 +957,24 @@ function renderPendingPerimeter() {
     if (points.length >= 2) {
         const ARR = 0;
         const a0Rad = Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x);
-        addArrow(layer, points[0].x * s + ARR * Math.cos(a0Rad), points[0].y * s + ARR * Math.sin(a0Rad), a0Rad * 180 / Math.PI + 180, color, null);
+        addArrow(
+            layer,
+            points[0].x * s + ARR * Math.cos(a0Rad),
+            points[0].y * s + ARR * Math.sin(a0Rad),
+            (a0Rad * 180) / Math.PI + 180,
+            color,
+            null,
+        );
         const n = points.length - 1;
         const aNRad = Math.atan2(points[n].y - points[n - 1].y, points[n].x - points[n - 1].x);
-        addArrow(layer, points[n].x * s - ARR * Math.cos(aNRad), points[n].y * s - ARR * Math.sin(aNRad), aNRad * 180 / Math.PI, color, null);
+        addArrow(
+            layer,
+            points[n].x * s - ARR * Math.cos(aNRad),
+            points[n].y * s - ARR * Math.sin(aNRad),
+            (aNRad * 180) / Math.PI,
+            color,
+            null,
+        );
     }
 
     // running length label for perimeter/area
@@ -945,12 +994,12 @@ function drawLineSegment(layer, p1, p2, s, color, measId) {
     const dy = (p2.y - p1.y) * s;
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.5) return;
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
 
     const line = document.createElement('div');
     line.className = 'measure-line m-line';
-    line.style.left = (p1.x * s) + 'px';
-    line.style.top = (p1.y * s - 1) + 'px';
+    line.style.left = p1.x * s + 'px';
+    line.style.top = p1.y * s - 1 + 'px';
     line.style.width = len + 'px';
     line.style.height = FINAL_LINEW + 'px';
     line.style.background = color;
@@ -969,14 +1018,15 @@ function renderArea(points, label, isPreview, measId) {
     const layer = getOrCreateLayer(pageEl);
 
     for (let i = 0; i < points.length; i++) {
-        const p1 = points[i], p2 = points[(i + 1) % points.length];
+        const p1 = points[i],
+            p2 = points[(i + 1) % points.length];
         drawLineSegment(layer, p1, p2, s, color, measId);
     }
 
     // fill
     const fill = document.createElement('div');
     fill.className = 'measure-fill';
-    const clip = points.map(p => (p.x * s) + 'px ' + (p.y * s) + 'px').join(', ');
+    const clip = points.map((p) => p.x * s + 'px ' + p.y * s + 'px').join(', ');
     fill.style.clipPath = 'polygon(' + clip + ')';
     fill.style.background = color + '25';
     if (measId) fill.dataset.measId = measId;
@@ -1019,11 +1069,11 @@ function renderCalibrationPreview() {
     const pdfDist = distanceBetween(last, mouse);
     if (pdfDist < 0.5) return;
 
-    const computedScale = calibrationMeters * 1000 * POINTS_PER_MM / pdfDist;
+    const computedScale = (calibrationMeters * 1000 * POINTS_PER_MM) / pdfDist;
     const clamped = Math.max(0.001, Math.min(MAX_SCALE, computedScale));
     const rounded = Math.round(clamped);
     const labelText = calibrationMeters + 'm \u2192 1:' + rounded;
-    addGhostLabel(layer, (last.x + mouse.x) / 2 * s, (last.y + mouse.y) / 2 * s, labelText);
+    addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, labelText);
 }
 
 function renderPreviewLine() {
@@ -1040,11 +1090,16 @@ function renderPreviewLine() {
 
     if (activeTool === 'distance') {
         const real = realWorldMm(distanceBetween(last, mouse));
-        addGhostLabel(layer, (last.x + mouse.x) / 2 * s, (last.y + mouse.y) / 2 * s, formatLength(real));
+        addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, formatLength(real));
     } else if (activeTool === 'perimeter') {
         const allPoints = [...pendingPoints, mouse];
         const total = polylineLength(allPoints, false);
-        addGhostLabel(layer, (last.x + mouse.x) / 2 * s + 10, (last.y + mouse.y) / 2 * s - 10, formatLength(realWorldMm(total)));
+        addGhostLabel(
+            layer,
+            ((last.x + mouse.x) / 2) * s + 10,
+            ((last.y + mouse.y) / 2) * s - 10,
+            formatLength(realWorldMm(total)),
+        );
     } else if (activeTool === 'area') {
         if (pendingPoints.length >= 2) {
             const first = pendingPoints[0];
@@ -1058,17 +1113,23 @@ function renderPreviewLine() {
                     if (poly.length < 3) continue;
                     const fill = document.createElement('div');
                     fill.className = 'measure-fill-ghost';
-                    fill.style.clipPath = 'polygon(' + poly.map(p => (p.x * s) + 'px ' + (p.y * s) + 'px').join(', ') + ')';
+                    fill.style.clipPath =
+                        'polygon(' + poly.map((p) => p.x * s + 'px ' + p.y * s + 'px').join(', ') + ')';
                     layer.appendChild(fill);
 
                     const pdfArea = simplePolygonArea(poly);
-                    const realMm2 = pdfArea / (POINTS_PER_MM * POINTS_PER_MM) * scaleRatio * scaleRatio;
+                    const realMm2 = (pdfArea / (POINTS_PER_MM * POINTS_PER_MM)) * scaleRatio * scaleRatio;
                     totalAreaMm2 += realMm2;
                     const pdfPerim = polylineLength(poly, true);
                     const realPerimMm = realWorldMm(pdfPerim);
                     const cx = poly.reduce((sum, p) => sum + p.x, 0) / poly.length;
                     const cy = poly.reduce((sum, p) => sum + p.y, 0) / poly.length;
-                    addGhostLabel(layer, (cx + 6) * s, (cy - 10) * s, 'Area: ' + formatArea(realMm2) + '\nPerim: ' + formatLength(realPerimMm));
+                    addGhostLabel(
+                        layer,
+                        (cx + 6) * s,
+                        (cy - 10) * s,
+                        'Area: ' + formatArea(realMm2) + '\nPerim: ' + formatLength(realPerimMm),
+                    );
                 }
                 if (subPolys.length > 1) {
                     const cx = allPoints.reduce((sum, p) => sum + p.x, 0) / allPoints.length;
@@ -1078,7 +1139,7 @@ function renderPreviewLine() {
             }
         } else {
             const real = realWorldMm(distanceBetween(last, mouse));
-            addGhostLabel(layer, (last.x + mouse.x) / 2 * s, (last.y + mouse.y) / 2 * s, formatLength(real));
+            addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, formatLength(real));
         }
     }
 }
@@ -1088,11 +1149,11 @@ function drawGhostSegment(layer, p1, p2, s) {
     const dy = (p2.y - p1.y) * s;
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.5) return;
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
     const line = document.createElement('div');
     line.className = 'measure-line-ghost';
-    line.style.left = (p1.x * s) + 'px';
-    line.style.top = (p1.y * s) + 'px';
+    line.style.left = p1.x * s + 'px';
+    line.style.top = p1.y * s + 'px';
     line.style.width = len + 'px';
     line.style.transform = 'rotate(' + angle + 'deg)';
     layer.appendChild(line);
@@ -1101,8 +1162,8 @@ function drawGhostSegment(layer, p1, p2, s) {
 function addGhostLabel(layer, x, y, text) {
     const lbl = document.createElement('div');
     lbl.className = 'measure-label-ghost';
-    lbl.style.left = (x + 6) + 'px';
-    lbl.style.top = (y - 10) + 'px';
+    lbl.style.left = x + 6 + 'px';
+    lbl.style.top = y - 10 + 'px';
     lbl.innerHTML = text.replace(/\n/g, '<br>');
     layer.appendChild(lbl);
 }
@@ -1112,8 +1173,8 @@ function addArrow(layer, x, y, angleDeg, color, measId) {
     svg.setAttribute('width', '12');
     svg.setAttribute('height', '14');
     svg.style.position = 'absolute';
-    svg.style.left = (x - 10) + 'px';
-    svg.style.top = (y - 7) + 'px';
+    svg.style.left = x - 10 + 'px';
+    svg.style.top = y - 7 + 'px';
     svg.style.transform = 'rotate(' + angleDeg + 'deg)';
     svg.style.transformOrigin = '10px 7px';
     svg.style.overflow = 'visible';
@@ -1144,7 +1205,6 @@ export function refreshAllMeasurements() {
     markCommittedDirty();
     renderAllMeasurements();
 }
-
 
 // ── auto scale detection ──
 
@@ -1223,7 +1283,9 @@ async function detectScaleFromRawPdf(fileUrl) {
             const parsed = parseScaleString(ss[1]);
             if (parsed) return parsed;
         }
-    } catch (e) { /* fetch may fail for some URLs */ }
+    } catch (e) {
+        /* fetch may fail for some URLs */
+    }
     return null;
 }
 

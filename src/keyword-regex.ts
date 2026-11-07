@@ -72,9 +72,7 @@ export function getKeywordRegex(keywords: string[] | null | undefined): RegExp |
         return cachedKeywordRegex;
     }
 
-    const pattern = unique
-        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('|');
+    const pattern = unique.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 
     cachedKeywordRegex = new RegExp(`\\b(${pattern})\\b`, 'gi');
     cachedKeywordList = keywordsJson;
@@ -101,7 +99,7 @@ export function clearKeywordRegexCache(): void {
  */
 export function normalizeKeywordMatch(
     match: RegExpExecArray,
-    keywords?: string[] | Map<string, string> | null
+    keywords?: string[] | Map<string, string> | null,
 ): string | null {
     if (!match[0]) return null;
     const lower = match[0].toLowerCase();

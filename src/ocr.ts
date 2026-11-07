@@ -46,7 +46,11 @@ export function resetOcrState() {
     ocrResetEpoch++;
 
     for (const slot of workerSlots) {
-        try { slot.worker.terminate(); } catch (e) { /* already gone */ }
+        try {
+            slot.worker.terminate();
+        } catch (e) {
+            /* already gone */
+        }
     }
     workerSlots.length = 0;
 
@@ -89,7 +93,7 @@ export function toggleOcrForFile(url) {
     }
 
     ocrFileState.set(url, { status: 'processing', texts: [], counts: {}, totalMatches: 0 });
-    startOcrForFile(url).catch(err => {
+    startOcrForFile(url).catch((err) => {
         console.error('[OCR] Error:', err);
         ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
         state.emit('results-changed');
@@ -141,19 +145,29 @@ function runOcrOnImage(slot, blob, pageNum, cacheKey, imageWidth, imageHeight, t
         const timer = setTimeout(() => {
             workerCallbacks.delete(id);
             if (slot.worker) {
-                try { slot.worker.terminate(); } catch (e) { /* ignore */ }
+                try {
+                    slot.worker.terminate();
+                } catch (e) {
+                    /* ignore */
+                }
                 slot.worker = createSlotWorker(slot);
             }
             reject(new Error('OCR page ' + pageNum + ' timed out'));
         }, timeoutMs);
         workerCallbacks.set(id, {
             slot,
-            resolve: (v) => { clearTimeout(timer); resolve(v); },
-            reject: (e) => { clearTimeout(timer); reject(e); }
+            resolve: (v) => {
+                clearTimeout(timer);
+                resolve(v);
+            },
+            reject: (e) => {
+                clearTimeout(timer);
+                reject(e);
+            },
         });
         slot.worker.postMessage({
             task: 'ocr-page',
-            data: { imageData: blob, pageNum, cacheKey: id, imageWidth, imageHeight }
+            data: { imageData: blob, pageNum, cacheKey: id, imageWidth, imageHeight },
         });
     });
 }
@@ -172,24 +186,29 @@ async function renderAndRecognize(page, pageNum, url, maxDim, timeoutMs, slot) {
 
     const canvas = new OffscreenCanvas(renderWidth, renderHeight);
     const ctx = canvas.getContext('2d');
-    const renderTask = page.render({ canvasContext: ctx, viewport: page.getViewport({ scale: OCR_SCALE * scaleFactor }) });
+    const renderTask = page.render({
+        canvasContext: ctx,
+        viewport: page.getViewport({ scale: OCR_SCALE * scaleFactor }),
+    });
     renderTask.promise.catch(() => {});
     await Promise.race([
         renderTask.promise,
-        new Promise((_, reject) => setTimeout(() => {
-            renderTask.cancel();
-            reject(new Error('render timed out'));
-        }, RENDER_TIMEOUT_MS))
+        new Promise((_, reject) =>
+            setTimeout(() => {
+                renderTask.cancel();
+                reject(new Error('render timed out'));
+            }, RENDER_TIMEOUT_MS),
+        ),
     ]);
     const blob = await canvas.convertToBlob({ type: 'image/png' });
 
-    const ocrResult = await runOcrOnImage(slot, blob, pageNum, url, pageWidth, pageHeight, timeoutMs) as any;
+    const ocrResult = (await runOcrOnImage(slot, blob, pageNum, url, pageWidth, pageHeight, timeoutMs)) as any;
     return {
         words: ocrResult.words || [],
         imageWidth: ocrResult.imageWidth,
         imageHeight: ocrResult.imageHeight,
         flatText: ocrResult.text || '',
-        scaleFactor
+        scaleFactor,
     };
 }
 
@@ -291,7 +310,7 @@ async function startOcrForFile(url) {
             }
 
             processPageOnWorker(pdfDoc, pageNum, url, fileName, slot)
-                .then(result => {
+                .then((result) => {
                     if (resetEpoch !== ocrResetEpoch) {
                         resolve();
                         return;
@@ -301,7 +320,7 @@ async function startOcrForFile(url) {
                             words: result.words,
                             imageWidth: result.imageWidth,
                             imageHeight: result.imageHeight,
-                            flatText: result.flatText
+                            flatText: result.flatText,
                         };
                         pageScaleFactors[pageNum - 1] = result.scaleFactor;
                     } else {
@@ -333,12 +352,20 @@ async function startOcrForFile(url) {
     if (resetEpoch !== ocrResetEpoch) return;
 
     for (const slot of workerSlots) {
-        try { slot.worker.terminate(); } catch (e) { /* ignore */ }
+        try {
+            slot.worker.terminate();
+        } catch (e) {
+            /* ignore */
+        }
     }
     workerSlots.length = 0;
 
     if (state.currentDocUrl !== url) {
-        try { pdfDoc.destroy(); } catch (e) { /* ignore */ }
+        try {
+            pdfDoc.destroy();
+        } catch (e) {
+            /* ignore */
+        }
     }
 
     const keywords = KEYWORDS || [];
@@ -376,7 +403,7 @@ async function startOcrForFile(url) {
         const effectiveScale = OCR_SCALE * sf;
 
         const wordRegex = new RegExp(combinedRegex.source, 'gi');
-        for (const word of (pageData.words || [])) {
+        for (const word of pageData.words || []) {
             const wordText = (word.text || '').trim();
             // Same rule as normalizeKeywordMatch: short and numeric keywords
             // ("AI", "QC", "4500") are valid, so do not filter them out here.
@@ -393,10 +420,10 @@ async function startOcrForFile(url) {
                     const bbox = word.bbox;
                     if (!bbox || bbox.x0 === undefined) break;
 
-                    const x = (bbox.x0 / effectiveScale) - HIGHLIGHT_PAD;
-                    const y = (bbox.y0 / effectiveScale) - HIGHLIGHT_PAD;
-                    const width = ((bbox.x1 - bbox.x0) / effectiveScale) + HIGHLIGHT_PAD * 2;
-                    const height = ((bbox.y1 - bbox.y0) / effectiveScale) + HIGHLIGHT_PAD * 2;
+                    const x = bbox.x0 / effectiveScale - HIGHLIGHT_PAD;
+                    const y = bbox.y0 / effectiveScale - HIGHLIGHT_PAD;
+                    const width = (bbox.x1 - bbox.x0) / effectiveScale + HIGHLIGHT_PAD * 2;
+                    const height = (bbox.y1 - bbox.y0) / effectiveScale + HIGHLIGHT_PAD * 2;
 
                     keywordMatches[key].push({ page: pageNum, x, y, width, height });
                 }
@@ -425,5 +452,7 @@ async function startOcrForFile(url) {
     state.emit('stats-changed');
     dom.statusBar.textContent = 'OCR done - ' + fileName + ': ' + totalMatches + ' new matches';
     dom.progressBar.style.width = '100%';
-    setTimeout(() => { dom.progressBar.style.width = '0%'; }, 800);
+    setTimeout(() => {
+        dom.progressBar.style.width = '0%';
+    }, 800);
 }

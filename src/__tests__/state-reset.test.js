@@ -86,10 +86,7 @@ function assertDocumentFieldsReset() {
     for (const [k, v] of Object.entries(DEFAULTS)) {
         if (typeof v === 'function') continue;
         if (OWNED_ELSEWHERE.has(k)) continue;
-        expect(
-            state[k],
-            `state.${k} is document-scoped but resetDocumentState() left it behind`,
-        ).toEqual(v);
+        expect(state[k], `state.${k} is document-scoped but resetDocumentState() left it behind`).toEqual(v);
     }
 }
 

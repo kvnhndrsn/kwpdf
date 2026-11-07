@@ -102,7 +102,10 @@ describe('normalizeKeywordMatch', () => {
     });
 
     it('looks up in Map if provided', () => {
-        const map = new Map([['foo', 'FooBar'], ['bar', 'BarBaz']]);
+        const map = new Map([
+            ['foo', 'FooBar'],
+            ['bar', 'BarBaz'],
+        ]);
         expect(normalizeKeywordMatch(['foo'], map)).toBe('FooBar');
         expect(normalizeKeywordMatch(['baz'], map)).toBe('baz');
     });

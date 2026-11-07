@@ -13,10 +13,7 @@ export interface HighlightSyncPlan {
     remove: string[];
 }
 
-export function planHighlightSync(
-    existing: Iterable<string>,
-    wanted: Iterable<string>,
-): HighlightSyncPlan {
+export function planHighlightSync(existing: Iterable<string>, wanted: Iterable<string>): HighlightSyncPlan {
     const have = new Set(existing);
     const want = new Set(wanted);
 

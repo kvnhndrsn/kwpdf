@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { processTextContent, buildOffsetMap, findStartItem, findEndItem, computeMatchCoords, precomputeAllSearches } from '../pdf-search';
+import {
+    processTextContent,
+    buildOffsetMap,
+    findStartItem,
+    findEndItem,
+    computeMatchCoords,
+    precomputeAllSearches,
+} from '../pdf-search';
 import { state } from '../state';
 import { setKeywords } from '../cross';
 import { clearKeywordRegexCache } from '../keyword-regex';
@@ -12,7 +19,9 @@ describe('processTextContent', () => {
     });
 
     it('concatenates single item', () => {
-        const result = processTextContent({ items: [{ str: 'hello', transform: [10, 0, 0, 10, 0, 0], width: 30, height: 10 }] });
+        const result = processTextContent({
+            items: [{ str: 'hello', transform: [10, 0, 0, 10, 0, 0], width: 30, height: 10 }],
+        });
         expect(result.text).toBe('hello');
         expect(result.items).toHaveLength(1);
     });
@@ -147,15 +156,13 @@ describe('computeMatchCoords', () => {
     });
 
     it('falls back to legacy math when no transform is present', () => {
-        const textItems = [
-            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
-        ];
+        const textItems = [{ text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 }];
         const viewport = { width: 500, height: 800, offsetY: 20 };
         const offsetMap = buildOffsetMap(textItems);
 
         const coords = computeMatchCoords(0, 5, viewport, textItems, offsetMap);
         expect(coords.x).toBeCloseTo(0, 1);
-        expect(coords.y).toBeCloseTo((800 + 20) - (100 + 10), 1);
+        expect(coords.y).toBeCloseTo(800 + 20 - (100 + 10), 1);
         expect(coords.height).toBe(10);
     });
 
@@ -175,9 +182,7 @@ describe('computeMatchCoords', () => {
     });
 
     it('interpolates along the advance direction for a partial char offset', () => {
-        const textItems = [
-            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
-        ];
+        const textItems = [{ text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 }];
         const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
         const offsetMap = buildOffsetMap(textItems);
 
@@ -187,9 +192,7 @@ describe('computeMatchCoords', () => {
 
     it('projects coords for a 90-degree rotated page', () => {
         // Raw page 500x800 with rotation 90 -> viewport 800x500, transform [0,1,1,0,0,0].
-        const textItems = [
-            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
-        ];
+        const textItems = [{ text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 }];
         const viewport = { width: 800, height: 500, transform: [0, 1, 1, 0, 0, 0] };
         const offsetMap = buildOffsetMap(textItems);
 
@@ -203,9 +206,7 @@ describe('computeMatchCoords', () => {
     });
 
     it('does not collapse the box for a 180-degree rotated page', () => {
-        const textItems = [
-            { text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 },
-        ];
+        const textItems = [{ text: 'hello', transform: [10, 0, 0, 10, 0, 100], width: 30, height: 10 }];
         const viewport = { width: 500, height: 800, transform: [-1, 0, 0, 1, 500, 0] };
         const offsetMap = buildOffsetMap(textItems);
 
@@ -217,9 +218,7 @@ describe('computeMatchCoords', () => {
 
     it('honors a non-zero viewBox (cropBox) origin', () => {
         // viewBox [50,0,550,800] -> transform [1,0,0,-1,-50,800]
-        const textItems = [
-            { text: 'hello', transform: [10, 0, 0, 10, 100, 100], width: 30, height: 10 },
-        ];
+        const textItems = [{ text: 'hello', transform: [10, 0, 0, 10, 100, 100], width: 30, height: 10 }];
         const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, -50, 800] };
         const offsetMap = buildOffsetMap(textItems);
 
@@ -277,7 +276,7 @@ describe('precomputeAllSearches', () => {
         state.textPageCache[1] = {
             text: 'hello world',
             viewport: { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] },
-            items: [{ text: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }]
+            items: [{ text: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }],
         };
     });
 
@@ -300,7 +299,14 @@ describe('precomputeAllSearches', () => {
         state.textPageCache[1] = {
             text: 'a __proto__ b constructor c toString d',
             viewport: { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] },
-            items: [{ text: 'a __proto__ b constructor c toString d', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }]
+            items: [
+                {
+                    text: 'a __proto__ b constructor c toString d',
+                    transform: [10, 0, 0, 10, 0, 100],
+                    width: 60,
+                    height: 10,
+                },
+            ],
         };
         setKeywords(['__proto__', 'constructor', 'toString']);
         clearKeywordRegexCache();
@@ -326,9 +332,11 @@ describe('precomputeAllSearches', () => {
                 getTextContent: async () => {
                     // Simulate the user opening another document mid-extraction.
                     state.docGeneration++;
-                    return { items: [{ str: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }] };
-                }
-            })
+                    return {
+                        items: [{ str: 'hello world', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }],
+                    };
+                },
+            }),
         };
 
         await precomputeAllSearches();

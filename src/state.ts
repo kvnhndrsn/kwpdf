@@ -103,7 +103,7 @@ export const state: State = {
 
     emit(event: string, data?: any): void {
         const arr = _listeners[event];
-        if (arr) arr.slice().forEach(cb => cb(data));
+        if (arr) arr.slice().forEach((cb) => cb(data));
     },
 };
 

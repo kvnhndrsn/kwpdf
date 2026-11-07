@@ -25,33 +25,39 @@ const LOCAL_ASSETS = [
     './utils/ocr_worker.js?h=__CACHE_VERSION__',
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            console.log('[SW] Caching local assets');
-            return Promise.all(
-                LOCAL_ASSETS.map(url =>
-                    cache.add(url).catch(err => {
-                        console.warn('[SW] Failed to cache:', url, err);
-                    })
-                )
-            );
-        }).then(() => self.skipWaiting())
+        caches
+            .open(CACHE_NAME)
+            .then((cache) => {
+                console.log('[SW] Caching local assets');
+                return Promise.all(
+                    LOCAL_ASSETS.map((url) =>
+                        cache.add(url).catch((err) => {
+                            console.warn('[SW] Failed to cache:', url, err);
+                        }),
+                    ),
+                );
+            })
+            .then(() => self.skipWaiting()),
     );
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then(names =>
-            Promise.all(
-                names.map(name => {
-                    if (name !== CACHE_NAME) {
-                        console.log('[SW] Deleting old cache:', name);
-                        return caches.delete(name);
-                    }
-                })
+        caches
+            .keys()
+            .then((names) =>
+                Promise.all(
+                    names.map((name) => {
+                        if (name !== CACHE_NAME) {
+                            console.log('[SW] Deleting old cache:', name);
+                            return caches.delete(name);
+                        }
+                    }),
+                ),
             )
-        ).then(() => self.clients.claim())
+            .then(() => self.clients.claim()),
     );
 });
 
@@ -66,7 +72,7 @@ function isNetworkFirst(url) {
         return false;
     }
     // endsWith, not equality: Pages serves the app from a /<repo>/ sub-path.
-    return NETWORK_FIRST.some(asset => pathname.endsWith(asset));
+    return NETWORK_FIRST.some((asset) => pathname.endsWith(asset));
 }
 
 /**
@@ -88,41 +94,48 @@ function putInCache(request, response) {
     if (!response || !response.ok) return Promise.resolve();
     if (!isCacheable(request)) return Promise.resolve();
     const copy = response.clone();
-    return caches.open(CACHE_NAME)
-        .then(cache => cache.put(request, copy))
-        .catch(err => console.warn('[SW] Failed to cache:', request.url, err));
+    return caches
+        .open(CACHE_NAME)
+        .then((cache) => cache.put(request, copy))
+        .catch((err) => console.warn('[SW] Failed to cache:', request.url, err));
 }
 
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
     if (isNetworkFirst(event.request.url)) {
         event.respondWith(
-            fetch(event.request).then(response => {
-                putInCache(event.request, response);
-                return response;
-            }).catch(() => caches.match(event.request))
+            fetch(event.request)
+                .then((response) => {
+                    putInCache(event.request, response);
+                    return response;
+                })
+                .catch(() => caches.match(event.request)),
         );
         return;
     }
 
     event.respondWith(
-        caches.match(event.request).then(cached => {
+        caches.match(event.request).then((cached) => {
             if (cached) {
-                fetch(event.request).then(response => {
-                    putInCache(event.request, response);
-                }).catch(() => {});
+                fetch(event.request)
+                    .then((response) => {
+                        putInCache(event.request, response);
+                    })
+                    .catch(() => {});
                 return cached;
             }
 
-            return fetch(event.request).then(response => {
-                putInCache(event.request, response);
-                return response;
-            }).catch(() => {
-                if (event.request.destination === 'document') {
-                    return caches.match('./index.html');
-                }
-            });
-        })
+            return fetch(event.request)
+                .then((response) => {
+                    putInCache(event.request, response);
+                    return response;
+                })
+                .catch(() => {
+                    if (event.request.destination === 'document') {
+                        return caches.match('./index.html');
+                    }
+                });
+        }),
     );
 });

@@ -24,9 +24,7 @@ function normalizeKeywordList(keywords) {
 function getKeywordRegex(keywords) {
     const unique = normalizeKeywordList(keywords);
     if (unique.length === 0) return null;
-    const pattern = unique
-        .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('|');
+    const pattern = unique.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     return new RegExp(`\\b(${pattern})\\b`, 'gi');
 }
 
@@ -140,7 +138,8 @@ function processTextContentOnItems(items) {
                 const hyphenBreak = /-\s*$/.test(prevItem.str) && /^\w/.test(item.str);
                 if (hyphenBreak) {
                     pageText = pageText.slice(0, -1);
-                    if (processed.length > 0) processed[processed.length - 1].text = processed[processed.length - 1].text.slice(0, -1);
+                    if (processed.length > 0)
+                        processed[processed.length - 1].text = processed[processed.length - 1].text.slice(0, -1);
                 } else {
                     pageText += ' ';
                     processed.push({ text: ' ', transform: item.transform, width: 0, height: item.height });
@@ -155,7 +154,7 @@ function processTextContentOnItems(items) {
 }
 
 // Main message handler
-self.onmessage = function(e) {
+self.onmessage = function (e) {
     const { task, data } = e.data;
 
     switch (task) {
@@ -168,7 +167,7 @@ self.onmessage = function(e) {
                     cacheKey: data.cacheKey,
                     fileType: data.fileType,
                     counts: result.counts,
-                    totalMatches: result.totalMatches
+                    totalMatches: result.totalMatches,
                 });
             }
             break;
@@ -182,7 +181,7 @@ self.onmessage = function(e) {
                     cacheKey: data.cacheKey,
                     fileType: 'pdf',
                     counts: result.counts,
-                    totalMatches: result.totalMatches
+                    totalMatches: result.totalMatches,
                 });
             }
             break;

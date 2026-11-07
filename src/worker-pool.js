@@ -117,7 +117,7 @@ export class WorkerPool {
 
     _processQueue() {
         while (this.taskQueue.length > 0) {
-            const idleWorker = this.workers.find(w => !this.activeWorkers.has(w));
+            const idleWorker = this.workers.find((w) => !this.activeWorkers.has(w));
             if (!idleWorker) return;
 
             const { taskData, resolve, reject, onProgress, generation } = this.taskQueue.shift();
@@ -144,8 +144,8 @@ export class WorkerPool {
                     fileName: fileName,
                     keywords: keywords || [],
                     fileType: fileType,
-                    cacheKey: cacheKey
-                }
+                    cacheKey: cacheKey,
+                },
             };
 
             this._enqueue(taskData, resolve, reject, null);
@@ -159,11 +159,11 @@ export class WorkerPool {
                 data: {
                     // Only the text is read by the worker. Posting whole page
                     // objects cloned every item and viewport matrix per rescan.
-                    pages: pages.map(p => (p && p.text) || ''),
+                    pages: pages.map((p) => (p && p.text) || ''),
                     fileName: fileName,
                     keywords: keywords || [],
-                    cacheKey: cacheKey
-                }
+                    cacheKey: cacheKey,
+                },
             };
 
             this._enqueue(taskData, resolve, reject, null);
@@ -174,14 +174,9 @@ export class WorkerPool {
         return new Promise((resolve, reject) => {
             const taskData = {
                 task: 'process-text-content',
-                data: { items }
+                data: { items },
             };
-            this._enqueue(
-                taskData,
-                (data) => resolve(data.result),
-                reject,
-                null
-            );
+            this._enqueue(taskData, (data) => resolve(data.result), reject, null);
         });
     }
 
@@ -209,7 +204,7 @@ export class WorkerPool {
         for (const callbacks of active) callbacks.reject(error);
         for (const task of queued) task.reject(error);
 
-        this.workers.forEach(w => w.terminate());
+        this.workers.forEach((w) => w.terminate());
         this.workers = [];
         this.activeWorkers.clear();
         this.initialized = false;

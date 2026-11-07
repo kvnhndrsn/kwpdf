@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-    estimatePageSize,
-    estimatePagesSize,
-    estimateTextEntrySize,
-    ITEM_OVERHEAD,
-} from '../cache-size';
+import { estimatePageSize, estimatePagesSize, estimateTextEntrySize, ITEM_OVERHEAD } from '../cache-size';
 
 function makePage(items, text) {
     return {
@@ -71,7 +66,10 @@ describe('estimatePagesSize', () => {
         // stay in the same ballpark: too low and eviction never fires, too high
         // and it evicts documents that would have fit.
         const pages = Array.from({ length: 20 }, () =>
-            makePage(Array.from({ length: 30 }, () => ({ ...ITEM })), 'tender '.repeat(30).trim()),
+            makePage(
+                Array.from({ length: 30 }, () => ({ ...ITEM })),
+                'tender '.repeat(30).trim(),
+            ),
         );
         const estimate = estimatePagesSize(pages);
         const actual = JSON.stringify(pages).length;

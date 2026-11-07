@@ -199,12 +199,24 @@ describe('countMatchesInAllDocs', () => {
 
     it('counts matches across docs', async () => {
         const dataCache = {
-            'doc1': { name: 'a.pdf', type: 'pdf', url: 'doc1', folder: '', fullPath: '', counts: {} },
-            'doc2': { name: 'b.pdf', type: 'pdf', url: 'doc2', folder: '', fullPath: '', counts: {} },
+            doc1: { name: 'a.pdf', type: 'pdf', url: 'doc1', folder: '', fullPath: '', counts: {} },
+            doc2: { name: 'b.pdf', type: 'pdf', url: 'doc2', folder: '', fullPath: '', counts: {} },
         };
         const textCache = {
-            'doc1': { totalPages: 1, pages: [{ text: 'hello world', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }], fileName: 'a.pdf', _lastAccess: 0, _size: 100 },
-            'doc2': { totalPages: 1, pages: [{ text: 'goodbye hello', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }], fileName: 'b.pdf', _lastAccess: 0, _size: 100 },
+            doc1: {
+                totalPages: 1,
+                pages: [{ text: 'hello world', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }],
+                fileName: 'a.pdf',
+                _lastAccess: 0,
+                _size: 100,
+            },
+            doc2: {
+                totalPages: 1,
+                pages: [{ text: 'goodbye hello', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }],
+                fileName: 'b.pdf',
+                _lastAccess: 0,
+                _size: 100,
+            },
         };
         const result = await countMatchesInAllDocs(dataCache, textCache, {}, 'hello', { cancelled: false });
         expect(result).not.toBeNull();
@@ -216,10 +228,16 @@ describe('countMatchesInAllDocs', () => {
 
     it('returns null when cancelled', async () => {
         const dataCache = {
-            'doc1': { name: 'a.pdf', type: 'pdf', url: 'doc1', folder: '', fullPath: '', counts: {} },
+            doc1: { name: 'a.pdf', type: 'pdf', url: 'doc1', folder: '', fullPath: '', counts: {} },
         };
         const textCache = {
-            'doc1': { totalPages: 1, pages: [{ text: 'hello', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }], fileName: 'a.pdf', _lastAccess: 0, _size: 100 },
+            doc1: {
+                totalPages: 1,
+                pages: [{ text: 'hello', viewport: { width: 800, height: 600 }, items: null, _lastAccess: 0 }],
+                fileName: 'a.pdf',
+                _lastAccess: 0,
+                _size: 100,
+            },
         };
         const cancelRef = { cancelled: true };
         const result = await countMatchesInAllDocs(dataCache, textCache, {}, 'hello', cancelRef);
@@ -228,10 +246,10 @@ describe('countMatchesInAllDocs', () => {
 
     it('searches docx content cache', async () => {
         const dataCache = {
-            'doc1': { name: 'a.docx', type: 'docx', url: 'doc1', folder: '', fullPath: '', counts: {} },
+            doc1: { name: 'a.docx', type: 'docx', url: 'doc1', folder: '', fullPath: '', counts: {} },
         };
         const contentCache = {
-            'doc1': { text: 'hello from docx', html: '', fileName: 'a.docx', type: 'docx', _lastAccess: 0, _size: 100 },
+            doc1: { text: 'hello from docx', html: '', fileName: 'a.docx', type: 'docx', _lastAccess: 0, _size: 100 },
         };
         const result = await countMatchesInAllDocs(dataCache, {}, contentCache, 'hello', { cancelled: false });
         expect(result).not.toBeNull();
@@ -312,9 +330,7 @@ describe('countMatchesInAllDocs scheduling', () => {
 
         try {
             const { docDataCache, docTextCache } = library(60);
-            const counts = await countMatchesInAllDocs(
-                docDataCache, docTextCache, {}, 'alpha', { cancelled: false },
-            );
+            const counts = await countMatchesInAllDocs(docDataCache, docTextCache, {}, 'alpha', { cancelled: false });
 
             expect(counts).not.toBeNull();
             expect(counts.totalMatches).toBe(60);
@@ -363,7 +379,7 @@ describe('getTextCoords wrapped matches', () => {
     const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
 
     function cached(items) {
-        return { text: items.map(i => i.text).join(''), viewport, items };
+        return { text: items.map((i) => i.text).join(''), viewport, items };
     }
 
     it('returns one box per line fragment for a wrapped match', () => {
@@ -401,7 +417,7 @@ describe('getTextCoords item lookup', () => {
 
     function entry(items) {
         return {
-            text: items.map(i => i.text).join(''),
+            text: items.map((i) => i.text).join(''),
             viewport: { width: 800, height: 600, offsetY: 0 },
             items,
         };

@@ -178,3 +178,12 @@ Most of what D5 asks for was already in `README.md` from earlier items: the scri
 - The password behaviour added in C10 was undocumented: a new caveat covers the single-file prompt (including a wrong password and cancelling) and the batch/ZIP skip, and notes that OCR does not prompt.
 
 Docs-only change: no build or test run was needed, and none of the claims are new behaviour — each describes something verified in its own item.
+
+## E1 — lint and format tooling
+
+- `eslint.config.js` (flat config) runs `@eslint/js` recommended plus `typescript-eslint` recommended over `src/**` and the root scripts, ignoring `dist/`, `dist-types/` and `node_modules/`. The esbuild defines (`WORKER_BASE`, `__BUNDLE_HASH__`, `__COMMIT_DATE__`, `KEYWORDS`) and `Tesseract` are declared as globals, so `no-undef` stays meaningful; `.mjs` files (`.verify/`) get Node globals.
+- Rule baseline matches the code as it is, not as it should be: `@typescript-eslint/no-explicit-any` off (69 hits, all in modules the strict migration has not reached — re-enable per batch as `tsconfig.strict.json` grows), unused catch bindings ignored, `no-empty` allows empty `catch`. Genuinely unused imports/variables and dead branches stay as errors.
+- `npm run lint`, `npm run format`, `npm run format:check`; CI runs lint and format:check between typecheck and tests. Prettier config is 4 spaces, single quotes, 120 columns to match the existing style; the reformat is a separate commit with no behaviour change.
+- 12 real findings fixed: unused imports (`getKeywordRegex` in keywords.ts, `fn` in ocr.ts, `ocr` namespace and `RawSearchResult` type in ui.ts, `processTextContent` in pdf-loader.ts, `SearchResult` in pdf-highlights.ts), unused variables (`ocrTotalPages` with both its writes, `hasDocx`, `pageText`, `displayText`, an unused `pageBreak` fixture helper, an unused `saveKeywords`), two `let` → `const`, a parenthesised assignment in a `while`, and an empty `if` branch in the calibrate handler.
+- Observation, not changed: the `displayText` removed from `rendering.ts` was computing "3/13"-style match position for the tree count but was never assigned to the span, which always shows the total. If that progress display was intended, it is a bug rather than dead code.
+- Verified: eslint 0, `format:check` 0, typecheck 0 (both projects), 257 tests / 20 files, build 0.

@@ -15,13 +15,18 @@ import { planHighlightSync } from './highlight-plan';
 /** Pages that currently carry highlight marks. */
 const decoratedPages = new Set<number>();
 
-interface Box { x: number; y: number; width: number; height: number }
+interface Box {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
 
 function paint(el: HTMLElement, box: Box, scale: number): void {
-    el.style.left = (box.x * scale) + 'px';
-    el.style.top = (box.y * scale) + 'px';
-    el.style.width = (box.width * scale) + 'px';
-    el.style.height = (box.height * scale) + 'px';
+    el.style.left = box.x * scale + 'px';
+    el.style.top = box.y * scale + 'px';
+    el.style.width = box.width * scale + 'px';
+    el.style.height = box.height * scale + 'px';
 }
 
 /** Reconcile key for a mark: `idx` on one line, `idx:part` when wrapped. */
@@ -32,7 +37,7 @@ function markKey(el: HTMLElement): string | null {
 }
 
 function setCurrentMark(index: number, on: boolean): void {
-    document.querySelectorAll<HTMLElement>(`.highlight-mark[data-idx="${index}"]`).forEach(el => {
+    document.querySelectorAll<HTMLElement>(`.highlight-mark[data-idx="${index}"]`).forEach((el) => {
         el.classList.toggle('current', on);
     });
 }
@@ -43,7 +48,7 @@ function applyPage(pageNum: number): void {
     if (!pageEl) return;
 
     const existing = new Map<string, HTMLElement>();
-    pageEl.querySelectorAll<HTMLElement>('.highlight-mark').forEach(el => {
+    pageEl.querySelectorAll<HTMLElement>('.highlight-mark').forEach((el) => {
         const key = markKey(el);
         if (key !== null) existing.set(key, el);
     });
@@ -133,6 +138,6 @@ export function repositionHighlights(): void {
 }
 
 export function clearHighlights(): void {
-    dom.viewer.querySelectorAll('.highlight-mark').forEach(el => el.remove());
+    dom.viewer.querySelectorAll('.highlight-mark').forEach((el) => el.remove());
     decoratedPages.clear();
 }

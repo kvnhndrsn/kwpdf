@@ -1,8 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
-    pdfToMm, realWorldMm, addCommas, formatLength, formatArea,
-    simplePolygonArea, getIntersection, decomposePolygon, distanceBetween,
-    snapAngle45, polylineLength, parseScaleString
+    pdfToMm,
+    realWorldMm,
+    addCommas,
+    formatLength,
+    formatArea,
+    simplePolygonArea,
+    getIntersection,
+    decomposePolygon,
+    distanceBetween,
+    snapAngle45,
+    polylineLength,
+    parseScaleString,
 } from '../measure';
 
 describe('pdfToMm', () => {
@@ -83,40 +92,40 @@ describe('formatArea', () => {
 
 describe('simplePolygonArea', () => {
     it('computes area of a triangle', () => {
-        const area = simplePolygonArea([{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 0, y: 4 }]);
+        const area = simplePolygonArea([
+            { x: 0, y: 0 },
+            { x: 3, y: 0 },
+            { x: 0, y: 4 },
+        ]);
         expect(area).toBeCloseTo(6, 10);
     });
 
     it('computes area of a square', () => {
-        const area = simplePolygonArea([{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 }]);
+        const area = simplePolygonArea([
+            { x: 0, y: 0 },
+            { x: 2, y: 0 },
+            { x: 2, y: 2 },
+            { x: 0, y: 2 },
+        ]);
         expect(area).toBeCloseTo(4, 10);
     });
 });
 
 describe('getIntersection', () => {
     it('returns null for parallel lines', () => {
-        const result = getIntersection(
-            { x: 0, y: 0 }, { x: 1, y: 0 },
-            { x: 0, y: 1 }, { x: 1, y: 1 }
-        );
+        const result = getIntersection({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 });
         expect(result).toBeNull();
     });
 
     it('finds intersection of crossing segments', () => {
-        const result = getIntersection(
-            { x: 0, y: 0 }, { x: 2, y: 2 },
-            { x: 0, y: 2 }, { x: 2, y: 0 }
-        );
+        const result = getIntersection({ x: 0, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 }, { x: 2, y: 0 });
         expect(result).not.toBeNull();
         expect(result.x).toBeCloseTo(1, 5);
         expect(result.y).toBeCloseTo(1, 5);
     });
 
     it('returns null for non-intersecting segments', () => {
-        const result = getIntersection(
-            { x: 0, y: 0 }, { x: 1, y: 0 },
-            { x: 2, y: 1 }, { x: 3, y: 1 }
-        );
+        const result = getIntersection({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 1 }, { x: 3, y: 1 });
         expect(result).toBeNull();
     });
 });
@@ -124,25 +133,34 @@ describe('getIntersection', () => {
 describe('decomposePolygon', () => {
     it('returns empty for < 3 points', () => {
         expect(decomposePolygon([{ x: 0, y: 0 }])).toEqual([]);
-        expect(decomposePolygon([{ x: 0, y: 0 }, { x: 1, y: 0 }])).toEqual([]);
+        expect(
+            decomposePolygon([
+                { x: 0, y: 0 },
+                { x: 1, y: 0 },
+            ]),
+        ).toEqual([]);
     });
 
     it('decomposes a self-intersecting bow-tie into two triangles', () => {
         const bowtie = [
-            { x: 0, y: 0 }, { x: 2, y: 2 },
-            { x: 2, y: 0 }, { x: 0, y: 2 }
+            { x: 0, y: 0 },
+            { x: 2, y: 2 },
+            { x: 2, y: 0 },
+            { x: 0, y: 2 },
         ];
         const result = decomposePolygon(bowtie);
         expect(result.length).toBeGreaterThanOrEqual(2);
-        result.forEach(poly => {
+        result.forEach((poly) => {
             expect(poly.length).toBeGreaterThanOrEqual(3);
         });
     });
 
     it('passes through a simple convex polygon unchanged', () => {
         const square = [
-            { x: 0, y: 0 }, { x: 2, y: 0 },
-            { x: 2, y: 2 }, { x: 0, y: 2 }
+            { x: 0, y: 0 },
+            { x: 2, y: 0 },
+            { x: 2, y: 2 },
+            { x: 0, y: 2 },
         ];
         const result = decomposePolygon(square);
         expect(result).toHaveLength(1);
@@ -186,16 +204,26 @@ describe('snapAngle45', () => {
 
 describe('polylineLength', () => {
     it('computes length of open polyline', () => {
-        const len = polylineLength([
-            { x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }
-        ], false);
+        const len = polylineLength(
+            [
+                { x: 0, y: 0 },
+                { x: 3, y: 0 },
+                { x: 3, y: 4 },
+            ],
+            false,
+        );
         expect(len).toBeCloseTo(3 + 4, 10);
     });
 
     it('computes length of closed polyline', () => {
-        const len = polylineLength([
-            { x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }
-        ], true);
+        const len = polylineLength(
+            [
+                { x: 0, y: 0 },
+                { x: 3, y: 0 },
+                { x: 3, y: 4 },
+            ],
+            true,
+        );
         expect(len).toBeCloseTo(3 + 4 + 5, 10);
     });
 });

@@ -85,10 +85,7 @@ describe('boxesOverlap / unionBoxes', () => {
     });
 
     it('unions into the enclosing box', () => {
-        const u = unionBoxes(
-            { x: 0, y: 0, width: 10, height: 4 },
-            { x: 8, y: 2, width: 6, height: 10 },
-        );
+        const u = unionBoxes({ x: 0, y: 0, width: 10, height: 4 }, { x: 8, y: 2, width: 6, height: 10 });
         expect(u).toEqual({ x: 0, y: 0, width: 14, height: 12 });
     });
 });

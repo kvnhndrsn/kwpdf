@@ -69,7 +69,7 @@ export async function loadKeywords() {
         loadCustomLists();
 
         const savedList = localStorage.getItem('tender_keyword_list');
-        currentListName = (savedList && KEYWORD_LISTS[savedList]) ? savedList : DEFAULT_LIST_NAME;
+        currentListName = savedList && KEYWORD_LISTS[savedList] ? savedList : DEFAULT_LIST_NAME;
 
         KEYWORDS = KEYWORD_LISTS[currentListName] || [];
         keywordLoadError = null;
@@ -77,7 +77,7 @@ export async function loadKeywords() {
         console.error('Failed to load keywords.json:', e);
         KEYWORD_LISTS = {};
         KEYWORDS = [];
-        keywordLoadError = (e && e.message) ? e.message : String(e);
+        keywordLoadError = e && e.message ? e.message : String(e);
     }
     syncToBus();
 }
@@ -144,7 +144,6 @@ export function switchKeywordList(listName) {
     return true;
 }
 
-
 /**
  * Keyword membership changed: per-document counts, the keyword grid and every
  * cached scan describe the previous list. Drop the caches, clear the open
@@ -195,17 +194,15 @@ let _keywordSelectSignature = '';
 export function populateKeywordSelect() {
     const isDocx = state.currentDocType !== 'pdf';
     const entries: Array<{ k: string; count: number }> = [];
-    KEYWORDS.forEach(k => {
-        const count = isDocx
-            ? (state.docKeywordCounts?.[k] || 0)
-            : (state.searchCache[k]?.length || 0);
+    KEYWORDS.forEach((k) => {
+        const count = isDocx ? state.docKeywordCounts?.[k] || 0 : state.searchCache[k]?.length || 0;
         if ((count as number) > 0) entries.push({ k, count: count as number });
     });
 
     // Navigation emits `keywords-changed` on every match step. Rebuilding the
     // options (and the custom dropdown's menu) for the same list was pure DOM
     // churn; only the selection actually moves.
-    const signature = entries.map(e => e.k + '\u0000' + e.count).join('\u0001');
+    const signature = entries.map((e) => e.k + '\u0000' + e.count).join('\u0001');
     if (signature === _keywordSelectSignature && dom.keywordSelect.options.length === entries.length) {
         for (const opt of Array.from(dom.keywordSelect.options)) {
             opt.selected = opt.value === state.activeKeyword;
@@ -286,7 +283,7 @@ export function toggleKeywordManager(e?) {
 
         const rect = dom.settingsBtn.getBoundingClientRect();
         menu.style.left = rect.left + 'px';
-        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.top = rect.bottom + 4 + 'px';
 
         trapFocus(menu, dom.settingsBtn);
 
@@ -422,11 +419,12 @@ function deleteCurrentList() {
 function saveCurrentList() {
     const listName = dom.kwListSelector ? dom.kwListSelector.value : currentListName;
 
-    const lines = dom.kwInput.value.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
+    const lines = dom.kwInput.value
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
         .slice(0, state.MAX_KEYWORDS_PER_LIST)
-        .map(k => k.slice(0, state.MAX_KEYWORD_LENGTH));
+        .map((k) => k.slice(0, state.MAX_KEYWORD_LENGTH));
 
     updateList(listName, lines);
     switchKeywordList(listName);
@@ -442,7 +440,7 @@ function exportKeywords() {
     const data = {
         name: listName,
         keywords: keywords,
-        exported: new Date().toISOString()
+        exported: new Date().toISOString(),
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -494,8 +492,8 @@ function importKeywords() {
 
                 const listName = (data.name || 'Imported List').slice(0, 100);
                 const words = data.keywords
-                    .filter(k => typeof k === 'string' && k.trim())
-                    .map(k => k.trim())
+                    .filter((k) => typeof k === 'string' && k.trim())
+                    .map((k) => k.trim())
                     .slice(0, state.MAX_KEYWORDS_PER_LIST);
 
                 createList(listName, words);

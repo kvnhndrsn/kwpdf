@@ -31,10 +31,10 @@ async function init() {
                         type: 'ocr-progress',
                         progress: m.progress,
                         pageNum: currentPageNum,
-                        cacheKey: currentCacheKey
+                        cacheKey: currentCacheKey,
                     });
                 }
-            }
+            },
         });
     } catch (err) {
         // Without this, a missing runtime asset left every queued page waiting
@@ -48,7 +48,7 @@ async function init() {
                     type: 'error',
                     error: message,
                     pageNum: data.pageNum,
-                    cacheKey: data.cacheKey
+                    cacheKey: data.cacheKey,
                 });
             }
         }
@@ -77,23 +77,29 @@ async function processMessage(e) {
                 imageWidth: data.imageWidth,
                 imageHeight: data.imageHeight,
                 pageNum: data.pageNum,
-                cacheKey: data.cacheKey
+                cacheKey: data.cacheKey,
             });
         } catch (err) {
             self.postMessage({
                 type: 'error',
                 error: err.message,
                 pageNum: data.pageNum,
-                cacheKey: data.cacheKey
+                cacheKey: data.cacheKey,
             });
         }
     } else if (task === 'terminate') {
-        if (worker) { await worker.terminate(); worker = null; }
+        if (worker) {
+            await worker.terminate();
+            worker = null;
+        }
         self.close();
     }
 }
 
-self.onmessage = function(e) {
-    if (!ready) { queue.push(e); return; }
+self.onmessage = function (e) {
+    if (!ready) {
+        queue.push(e);
+        return;
+    }
     processMessage(e);
 };

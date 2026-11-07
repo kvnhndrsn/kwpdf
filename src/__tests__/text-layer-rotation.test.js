@@ -12,14 +12,19 @@ const css = fs.readFileSync(path.join(here, '..', 'style.css'), 'utf8');
 /** Build a one-page PDF with the given /Rotate and a single text run. */
 function buildPdf(rotate) {
     const objs = [];
-    const add = body => { objs.push(body); return objs.length; };
+    const add = (body) => {
+        objs.push(body);
+        return objs.length;
+    };
 
     const content = 'BT /F1 24 Tf 72 700 Td (ROTATED PAGE TEXT) Tj ET';
     const contentObj = add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     const fontObj = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
     const pageObj = objs.length + 1;
     const pagesObj = objs.length + 2;
-    add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 612 792] /Rotate ${rotate} /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contentObj} 0 R >>`);
+    add(
+        `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 612 792] /Rotate ${rotate} /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contentObj} 0 R >>`,
+    );
     add(`<< /Type /Pages /Kids [${pageObj} 0 R] /Count 1 >>`);
     const catalogObj = objs.length + 1;
     add(`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`);
@@ -46,9 +51,7 @@ async function loadPage(rotate) {
 
 /** Pull the transform declared for a rotation out of the real stylesheet. */
 function cssTransformFor(rotation) {
-    const re = new RegExp(
-        `\\.textLayer\\[data-main-rotation="${rotation}"\\]\\s*\\{[^}]*?transform:\\s*([^;]+);`,
-    );
+    const re = new RegExp(`\\.textLayer\\[data-main-rotation="${rotation}"\\]\\s*\\{[^}]*?transform:\\s*([^;]+);`);
     const match = css.match(re);
     if (!match) return null;
     return match[1].trim();
@@ -63,7 +66,7 @@ function applyCssTransform(value, point, self) {
     let [x, y] = point;
     for (const fn of fns.reverse()) {
         const [name, argText] = fn.match(/([a-zA-Z]+)\(([^)]*)\)/).slice(1);
-        const args = argText.split(',').map(s => s.trim());
+        const args = argText.split(',').map((s) => s.trim());
         if (name === 'rotate') {
             const rad = (parseFloat(args[0]) * Math.PI) / 180;
             const c = Math.cos(rad);
@@ -120,7 +123,7 @@ describe('text layer on rotated pages', () => {
             const viewport = page.getViewport({ scale: 1 });
             const raw = viewport.rawDims;
             const textContent = await page.getTextContent();
-            const item = textContent.items.find(i => i.str);
+            const item = textContent.items.find((i) => i.str);
             expect(item).toBeTruthy();
 
             // Layer-space origin, exactly as pdf.js TextLayer computes it.
@@ -150,17 +153,26 @@ describe('text layer on rotated pages', () => {
             const raw = viewport.rawDims;
 
             // Corners of the unrotated layer box.
-            const corners = [[0, 0], [raw.pageWidth, 0], [0, raw.pageHeight], [raw.pageWidth, raw.pageHeight]];
+            const corners = [
+                [0, 0],
+                [raw.pageWidth, 0],
+                [0, raw.pageHeight],
+                [raw.pageWidth, raw.pageHeight],
+            ];
             const cssTransform = rotate === 0 ? '' : cssTransformFor(rotate);
-            const mapped = corners.map(c => applyCssTransform(cssTransform || '', c, {
-                width: raw.pageWidth,
-                height: raw.pageHeight,
-            }));
+            const mapped = corners.map((c) =>
+                applyCssTransform(cssTransform || '', c, {
+                    width: raw.pageWidth,
+                    height: raw.pageHeight,
+                }),
+            );
 
-            const xs = mapped.map(m => m[0]);
-            const ys = mapped.map(m => m[1]);
-            const minX = Math.min(...xs), maxX = Math.max(...xs);
-            const minY = Math.min(...ys), maxY = Math.max(...ys);
+            const xs = mapped.map((m) => m[0]);
+            const ys = mapped.map((m) => m[1]);
+            const minX = Math.min(...xs),
+                maxX = Math.max(...xs);
+            const minY = Math.min(...ys),
+                maxY = Math.max(...ys);
 
             expect(minX).toBeCloseTo(0, 2);
             expect(minY).toBeCloseTo(0, 2);
@@ -188,21 +200,28 @@ describe('keyword highlights on rotated pages', () => {
             const start = processed.text.indexOf(needle);
             expect(start).toBeGreaterThanOrEqual(0);
 
-            const box = computeMatchCoords(start, start + needle.length, {
-                width: viewport.width,
-                height: viewport.height,
-                offsetX: viewport.offsetX,
-                offsetY: viewport.offsetY,
-                transform: viewport.transform,
-                rotation: viewport.rotation,
-            }, processed.items, offsetMap);
+            const box = computeMatchCoords(
+                start,
+                start + needle.length,
+                {
+                    width: viewport.width,
+                    height: viewport.height,
+                    offsetX: viewport.offsetX,
+                    offsetY: viewport.offsetY,
+                    transform: viewport.transform,
+                    rotation: viewport.rotation,
+                },
+                processed.items,
+                offsetMap,
+            );
 
             // The run's real glyph corners, projected the way pdf.js paints them.
-            const item = processed.items.find(i => i.text.includes(needle));
+            const item = processed.items.find((i) => i.text.includes(needle));
             expect(item).toBeTruthy();
             const t = item.transform;
             const startFrac = (start - offsetMap.offsets[processed.items.indexOf(item)]) / item.text.length;
-            const endFrac = (start + needle.length - offsetMap.offsets[processed.items.indexOf(item)]) / item.text.length;
+            const endFrac =
+                (start + needle.length - offsetMap.offsets[processed.items.indexOf(item)]) / item.text.length;
             const h = item.height;
             const corners = [
                 [t[4] + item.width * startFrac, t[5]],
@@ -211,10 +230,12 @@ describe('keyword highlights on rotated pages', () => {
                 [t[4] + item.width * startFrac, t[5] + h],
             ].map(([x, y]) => viewport.convertToViewportPoint(x, y));
 
-            const gx = corners.map(c => c[0]);
-            const gy = corners.map(c => c[1]);
-            const minX = Math.min(...gx), maxX = Math.max(...gx);
-            const minY = Math.min(...gy), maxY = Math.max(...gy);
+            const gx = corners.map((c) => c[0]);
+            const gy = corners.map((c) => c[1]);
+            const minX = Math.min(...gx),
+                maxX = Math.max(...gx);
+            const minY = Math.min(...gy),
+                maxY = Math.max(...gy);
 
             // The highlight box must contain the painted run on both axes.
             expect(box.x).toBeLessThanOrEqual(minX + 0.5);
@@ -250,7 +271,7 @@ describe('keyword highlights on rotated pages', () => {
         const coords = getTextCoords(cached, start, start + needle.length);
         expect(coords).not.toBeNull();
 
-        const item = processed.items.find(i => i.text.includes(needle));
+        const item = processed.items.find((i) => i.text.includes(needle));
         const baseline = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
         expect(coords.startX).toBeLessThanOrEqual(baseline[0] + 0.5);
         expect(coords.startY).toBeLessThanOrEqual(baseline[1] + 0.5);

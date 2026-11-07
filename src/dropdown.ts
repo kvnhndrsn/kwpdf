@@ -15,7 +15,7 @@ export class CustomDropdown {
             childList: true,
             subtree: true,
             attributes: true,
-            attributeFilter: ['disabled']
+            attributeFilter: ['disabled'],
         });
         this.sync();
     }
@@ -192,7 +192,7 @@ export class CustomDropdown {
         if (spaceBelow < menuHeight && spaceAbove > menuHeight) {
             this.menu.classList.add('flip-up');
             this.menu.style.top = 'auto';
-            this.menu.style.bottom = (window.innerHeight - rect.top) + 'px';
+            this.menu.style.bottom = window.innerHeight - rect.top + 'px';
         } else {
             this.menu.classList.remove('flip-up');
             this.menu.style.top = rect.bottom + 'px';

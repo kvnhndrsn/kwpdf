@@ -194,17 +194,19 @@ describe('highlight overlay (DOM)', () => {
     });
 
     it('paints one mark per line fragment of a wrapped match', () => {
-        setResults([{
-            page: 1,
-            x: 10,
-            y: 20,
-            width: 20,
-            height: 5,
-            boxes: [
-                { x: 10, y: 20, width: 20, height: 5 },
-                { x: 10, y: 40, width: 40, height: 5 },
-            ],
-        }]);
+        setResults([
+            {
+                page: 1,
+                x: 10,
+                y: 20,
+                width: 20,
+                height: 5,
+                boxes: [
+                    { x: 10, y: 20, width: 20, height: 5 },
+                    { x: 10, y: 40, width: 40, height: 5 },
+                ],
+            },
+        ]);
         state.currentMatchIndex = 0;
 
         renderAllHighlights();
@@ -214,8 +216,8 @@ describe('highlight overlay (DOM)', () => {
         expect(m[0].style.top).toBe('20px');
         expect(m[1].style.top).toBe('40px');
         expect(m[1].style.width).toBe('40px');
-        expect(m.every(el => el.dataset.idx === '0')).toBe(true);
-        expect(m.every(el => el.classList.contains('current'))).toBe(true);
+        expect(m.every((el) => el.dataset.idx === '0')).toBe(true);
+        expect(m.every((el) => el.classList.contains('current'))).toBe(true);
     });
 
     it('moves the current class across every fragment of a wrapped match', () => {
@@ -238,24 +240,26 @@ describe('highlight overlay (DOM)', () => {
         updateCurrentMatch(0, 1);
 
         const m = marks(1);
-        const fragments = m.filter(el => el.dataset.idx === '0');
+        const fragments = m.filter((el) => el.dataset.idx === '0');
         expect(fragments).toHaveLength(2);
-        expect(fragments.every(el => !el.classList.contains('current'))).toBe(true);
-        expect(m.filter(el => el.dataset.idx === '1')[0].classList.contains('current')).toBe(true);
+        expect(fragments.every((el) => !el.classList.contains('current'))).toBe(true);
+        expect(m.filter((el) => el.dataset.idx === '1')[0].classList.contains('current')).toBe(true);
     });
 
     it('keeps each fragment scaled on reposition', () => {
-        setResults([{
-            page: 1,
-            x: 10,
-            y: 20,
-            width: 20,
-            height: 5,
-            boxes: [
-                { x: 10, y: 20, width: 20, height: 5 },
-                { x: 10, y: 30, width: 10, height: 5 },
-            ],
-        }]);
+        setResults([
+            {
+                page: 1,
+                x: 10,
+                y: 20,
+                width: 20,
+                height: 5,
+                boxes: [
+                    { x: 10, y: 20, width: 20, height: 5 },
+                    { x: 10, y: 30, width: 10, height: 5 },
+                ],
+            },
+        ]);
         renderAllHighlights();
 
         state.currentScale = 2;

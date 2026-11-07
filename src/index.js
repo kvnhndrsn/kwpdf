@@ -28,7 +28,6 @@ import * as ocr from './ocr';
 import * as measure from './measure';
 import { CustomDropdown } from './dropdown';
 
-
 register('setupVirtualPages', pdfRenderer.setupVirtualPages);
 register('teardownPdf', pdfRenderer.teardownPdf);
 register('isPageRendered', pdfRenderer.isPageRendered);
@@ -134,7 +133,6 @@ state.on('results-changed', fn.renderResultsArea);
 state.on('stats-changed', fn.updateStats);
 state.on('badge-changed', fn.updateSidebarBadge);
 state.on('keywords-changed', fn.populateKeywordSelect);
-
 
 ocr.initOcr();
 
