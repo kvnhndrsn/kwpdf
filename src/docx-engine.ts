@@ -3,6 +3,7 @@ import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
 import { htmlToText } from './html-text';
+import { isLegacyDocFile, LEGACY_DOC_MESSAGE } from './file-handler';
 
 state.searchCache = createSearchCache();
 state.docSearchResults = [];
@@ -194,6 +195,15 @@ export function loadDocxDoc(fileUrl, keyword = '') {
                     const arrayBuffer = await response.arrayBuffer();
                     if (!isCurrentGeneration(generation)) return;
                     const fileName = state.docDataCache[fileUrl]?.name || 'Document';
+                    // Mammoth cannot read the legacy binary format; say so in the
+                    // loader instead of letting the extraction fail and then
+                    // reporting "Document not found in cache".
+                    if (isLegacyDocFile(arrayBuffer) || state.currentDocType === 'doc') {
+                        dom.loaderFilename.textContent = 'Unsupported document';
+                        dom.loaderStatus.textContent = LEGACY_DOC_MESSAGE;
+                        dom.loaderProgressFill.style.width = '0%';
+                        return;
+                    }
                     await fn.extractDocText(arrayBuffer, fileName, fileUrl, null);
                     if (!isCurrentGeneration(generation)) return;
                     cached = state.docContentCache[fileUrl];

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getFileType, getFileIcon, evictCaches } from '../file-handler';
+import { getFileType, getFileIcon, evictCaches, isLegacyDocFile, LEGACY_DOC_MESSAGE } from '../file-handler';
 import { state } from '../state';
 
 describe('getFileType', () => {
@@ -29,6 +29,30 @@ describe('getFileType', () => {
         expect(getFileType('file.png')).toBeNull();
         expect(getFileType('file')).toBeNull();
         expect(getFileType('')).toBeNull();
+    });
+});
+
+describe('isLegacyDocFile', () => {
+    const header = (bytes) => new Uint8Array(bytes).buffer;
+
+    it('recognises the OLE2 compound-file header', () => {
+        expect(isLegacyDocFile(header([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1]))).toBe(true);
+    });
+
+    it('does not flag OOXML, PDF or plain text', () => {
+        expect(isLegacyDocFile(header([0x50, 0x4b, 0x03, 0x04]))).toBe(false);
+        expect(isLegacyDocFile(header([0x25, 0x50, 0x44, 0x46]))).toBe(false);
+        expect(isLegacyDocFile(header([0x68, 0x65, 0x6c, 0x6c]))).toBe(false);
+    });
+
+    it('is safe on truncated or empty buffers', () => {
+        expect(isLegacyDocFile(new ArrayBuffer(0))).toBe(false);
+        expect(isLegacyDocFile(header([0xd0]))).toBe(false);
+        expect(isLegacyDocFile(header([0xd0, 0xcf, 0x11]))).toBe(false);
+    });
+
+    it('tells the user what to do instead', () => {
+        expect(LEGACY_DOC_MESSAGE).toContain('.docx');
     });
 });
 

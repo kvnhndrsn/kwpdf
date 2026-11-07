@@ -49,7 +49,9 @@ after a rebuild.
 - **Keyword list failures are visible.** If `keywords.json` cannot be fetched the
   app shows a banner with a Retry action instead of silently reporting no matches.
 - **Legacy `.doc` is not supported.** Mammoth only reads `.docx`; save binary
-  Word files as `.docx` first.
+  Word files as `.docx` first. Such files are rejected by their OLE2 header (or
+  `.doc` extension) with that message before they reach the tree, instead of
+  failing inside the parser.
 - **OCR is self-hosted.** The Tesseract runtime, its wasm core and the eng
   language data ship in `dist/tesseract/` (copied from the pinned
   `tesseract.js`, `tesseract.js-core` and `@tesseract.js-data/eng` packages), so

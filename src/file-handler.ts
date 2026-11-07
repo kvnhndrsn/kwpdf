@@ -6,6 +6,22 @@ import { estimatePagesSize, estimateTextEntrySize } from './cache-size';
 import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS, basePath } from './cross';
 import { htmlToText } from './html-text';
 
+/** Word 97-2003 `.doc` files are OLE2 compound files; OOXML `.docx` is a ZIP. */
+const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0];
+
+export const LEGACY_DOC_MESSAGE = "Legacy .doc isn't supported \u2014 save it as .docx";
+
+/**
+ * Mammoth only reads OOXML. Sniffing the header catches the legacy format even
+ * when it arrives as `report.doc` from a folder drop, before Mammoth is asked
+ * to parse it and returns something generic.
+ */
+export function isLegacyDocFile(arrayBuffer) {
+    if (!arrayBuffer || arrayBuffer.byteLength < OLE_SIGNATURE.length) return false;
+    const bytes = new Uint8Array(arrayBuffer, 0, OLE_SIGNATURE.length);
+    return OLE_SIGNATURE.every((b, i) => bytes[i] === b);
+}
+
 export function getFileType(filename) {
     const lower = filename.toLowerCase();
     if (lower.endsWith('.pdf')) return 'pdf';
@@ -186,7 +202,13 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
         let htmlContent = '';
         let plainText = '';
 
-        if (type === 'docx' || type === 'doc') {
+        if (type === 'doc' || isLegacyDocFile(arrayBuffer)) {
+            showFileError(fileName, LEGACY_DOC_MESSAGE);
+            updateProgressMainThread();
+            return;
+        }
+
+        if (type === 'docx') {
             const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
             htmlContent = htmlResult.value;
             // Derive the searchable text from the HTML we already have instead
@@ -256,6 +278,18 @@ async function processFiles(files) {
         const sizeLimit = getFileType(file.name) === 'pdf' ? state.MAX_FILE_SIZE : state.MAX_DOC_FILE_SIZE;
         if (file.size > sizeLimit) {
             showFileError(file.name, 'Skipped (' + (file.size / 1024 / 1024).toFixed(1) + ' MB exceeds limit)');
+            return;
+        }
+
+        // A legacy .doc would otherwise get a placeholder row and then fail
+        // inside Mammoth, leaving a dead entry and a success message. Reject it
+        // before anything is added to the tree. The header check also catches a
+        // binary file renamed to .docx.
+        if (getFileType(file.name) === 'doc' || isLegacyDocFile(await file.slice(0, 4).arrayBuffer())) {
+            state.processed = 1;
+            state.totalFiles = 1;
+            showFileError(file.name, LEGACY_DOC_MESSAGE);
+            state.emit('stats-changed');
             return;
         }
 
