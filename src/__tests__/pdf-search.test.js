@@ -234,7 +234,8 @@ describe('computeMatchCoords', () => {
 
 describe('precomputeAllSearches', () => {
     beforeEach(() => {
-        state.searchCache = {};
+        state.searchCache = Object.create(null);
+        state.searchDeduplicated = false;
         state.textPageCache = {};
         state.totalPages = 1;
         state.docGeneration = 0;
@@ -250,7 +251,7 @@ describe('precomputeAllSearches', () => {
         setKeywords([]);
         clearKeywordRegexCache();
         await expect(precomputeAllSearches()).resolves.not.toThrow();
-        expect(state.searchCache._deduplicated).toBe(true);
+        expect(state.searchDeduplicated).toBe(true);
     });
 
     it('records matches for a populated keyword list', async () => {
@@ -258,7 +259,26 @@ describe('precomputeAllSearches', () => {
         clearKeywordRegexCache();
         await precomputeAllSearches();
         expect(state.searchCache.world).toHaveLength(1);
-        expect(state.searchCache._deduplicated).toBe(true);
+        expect(state.searchDeduplicated).toBe(true);
+    });
+
+    it('keeps keywords that collide with Object.prototype', async () => {
+        state.textPageCache[1] = {
+            text: 'a __proto__ b constructor c toString d',
+            viewport: { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] },
+            items: [{ text: 'a __proto__ b constructor c toString d', transform: [10, 0, 0, 10, 0, 100], width: 60, height: 10 }]
+        };
+        setKeywords(['__proto__', 'constructor', 'toString']);
+        clearKeywordRegexCache();
+        await precomputeAllSearches();
+
+        // A plain {} cache would read these as inherited members (or write
+        // through the prototype setter) instead of storing match lists.
+        expect(Array.isArray(state.searchCache['__proto__'])).toBe(true);
+        expect(state.searchCache['__proto__']).toHaveLength(1);
+        expect(state.searchCache.constructor).toHaveLength(1);
+        expect(state.searchCache.toString).toHaveLength(1);
+        expect(Object.getPrototypeOf(state.searchCache)).toBeNull();
     });
 
     it('abandons precompute when the document changes mid-flight', async () => {
@@ -281,7 +301,7 @@ describe('precomputeAllSearches', () => {
 
         // The stale run must not mark the cache complete, otherwise the newly
         // opened document would skip its own precompute.
-        expect(state.searchCache._deduplicated).toBeUndefined();
+        expect(state.searchDeduplicated).toBe(false);
         expect(state.searchCache.world).toBeUndefined();
     });
 });

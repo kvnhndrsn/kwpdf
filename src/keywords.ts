@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, createSearchCache } from './state';
 import * as dom from './dom';
 import { clearKeywordRegexCache, getKeywordRegex } from './keyword-regex';
 import { fn, setKeywords, setKeywordLists, setDefaultListName } from './cross';
@@ -156,7 +156,8 @@ function saveKeywords() {
  * handler in index.js does.
  */
 function refreshScansAfterKeywordChange() {
-    state.searchCache = {};
+    state.searchCache = createSearchCache();
+    state.searchDeduplicated = false;
     state.activeKeyword = '';
     fn.clearDocQueryCache?.();
     fn.clearSearch();
@@ -200,7 +201,7 @@ export function populateKeywordSelect() {
     const entries: Array<{ k: string; count: number }> = [];
     KEYWORDS.forEach(k => {
         const count = isDocx
-            ? ((state.searchCache as any)._docCounts?.[k] || 0)
+            ? (state.docKeywordCounts?.[k] || 0)
             : (state.searchCache[k]?.length || 0);
         if ((count as number) > 0) entries.push({ k, count: count as number });
     });

@@ -1,4 +1,4 @@
-import { state, isCurrentGeneration, beginSearch, isCurrentSearch } from './state';
+import { state, isCurrentGeneration, beginSearch, isCurrentSearch, createSearchCache } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { projectItemBox, unionBoxes, sameTextLine } from './pdf-coords';
@@ -7,7 +7,7 @@ import { clearHighlights, renderAllHighlights } from './pdf-highlights';
 
 state.searchResults = [];
 state.currentMatchIndex = -1;
-state.searchCache = {};
+state.searchCache = createSearchCache();
 state.textPageCache = {};
 
 export function processTextContent(textContent) {
@@ -146,12 +146,12 @@ export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, of
 }
 
 export async function precomputeAllSearches() {
-    if (state.searchCache._deduplicated) return;
+    if (state.searchDeduplicated) return;
 
     const combinedRegex = getKeywordRegex(KEYWORDS);
 
     if (!combinedRegex) {
-        (state.searchCache as any)._deduplicated = true;
+        state.searchDeduplicated = true;
         state.emit('keywords-changed');
         return;
     }
@@ -185,13 +185,13 @@ export async function precomputeAllSearches() {
     }
 
     if (!isCurrentGeneration(generation)) return;
-    (state.searchCache as any)._deduplicated = true;
+    state.searchDeduplicated = true;
     state.emit('keywords-changed');
 }
 
 async function computeSearchForQuery(query) {
     if (state.searchCache[query] !== undefined) return;
-    if (state.searchCache._deduplicated) return;
+    if (state.searchDeduplicated) return;
 
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const localRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
@@ -282,7 +282,6 @@ function allKeywordResults(): any[] {
     let entries = 0;
     let count = 0;
     for (const [keyword, results] of Object.entries(cache)) {
-        if (keyword === '_deduplicated') continue;
         entries++;
         count += results.length;
     }
@@ -296,7 +295,6 @@ function allKeywordResults(): any[] {
 
     const results = [];
     for (const [keyword, matches] of Object.entries(cache)) {
-        if (keyword === '_deduplicated') continue;
         for (const r of matches) {
             results.push({ ...r, keyword });
         }
@@ -307,7 +305,7 @@ function allKeywordResults(): any[] {
 }
 
 export function cycleAllKeywords() {
-    if (!state.searchCache._deduplicated) return;
+    if (!state.searchDeduplicated) return;
 
     const allResults = allKeywordResults();
 

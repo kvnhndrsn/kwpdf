@@ -1,10 +1,10 @@
-import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } from './state';
+import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState, createSearchCache } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
 import { htmlToText } from './html-text';
 
-state.searchCache = {};
+state.searchCache = createSearchCache();
 state.docSearchResults = [];
 state.docCurrentMatchIndex = -1;
 state.docOriginalHtml = null;
@@ -221,7 +221,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
             if (!isCurrentGeneration(generation)) return;
 
             if (!keyword) {
-                const counts = state.searchCache._docCounts;
+                const counts = state.docKeywordCounts;
                 if (counts) {
                     for (const [k, v] of Object.entries(counts)) {
                         if ((v as unknown as number) > 0) { keyword = k; break; }
@@ -301,13 +301,13 @@ function startDocSearchComputation() {
         counts[r.keyword] = (counts[r.keyword] || 0) + 1;
     });
 
-    (state.searchCache as any)._docCounts = counts;
-    (state.searchCache as any)._docResults = results;
+    state.docKeywordCounts = counts;
+    state.docKeywordResults = results;
     state.emit('keywords-changed');
 }
 
 export function cycleAllDocKeywords() {
-    const allResults = state.searchCache._docResults;
+    const allResults = state.docKeywordResults;
     if (!allResults || allResults.length === 0) return;
 
     const wasAlreadyAll = state.allKeywordMode && state.docSearchResults.length === allResults.length;

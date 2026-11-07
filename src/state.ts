@@ -1,6 +1,15 @@
-import type { State } from './types';
+import type { State, SearchResult } from './types';
 
 const _listeners: Record<string, Array<(data?: any) => void>> = {};
+
+/**
+ * The keyword-keyed search cache. Null prototype on purpose: keywords are user
+ * text, so `__proto__`, `constructor` and `toString` are legitimate keys and a
+ * plain `{}` would either shadow the prototype or silently drop the entry.
+ */
+export function createSearchCache(): Record<string, SearchResult[]> {
+    return Object.create(null) as Record<string, SearchResult[]>;
+}
 
 export const state: State = {
     pdfDoc: null,
@@ -17,11 +26,14 @@ export const state: State = {
     searchResults: [],
     searchResultsByPage: {},
     currentMatchIndex: -1,
-    searchCache: {},
+    searchCache: createSearchCache(),
+    searchDeduplicated: false,
 
     docSearchResults: [],
     docCurrentMatchIndex: -1,
     docOriginalHtml: null,
+    docKeywordCounts: {},
+    docKeywordResults: [],
 
     pageHeights: {},
     renderedPages: new Set<number>(),
@@ -134,7 +146,8 @@ export function resetDocumentState(): void {
     state.renderedScales = {};
     state.textPageCache = {};
 
-    state.searchCache = {};
+    state.searchCache = createSearchCache();
+    state.searchDeduplicated = false;
     state.searchResults = [];
     state.searchResultsByPage = {};
     state.currentMatchIndex = -1;
@@ -146,6 +159,8 @@ export function resetDocumentState(): void {
     state.docSearchResults = [];
     state.docCurrentMatchIndex = -1;
     state.docOriginalHtml = null;
+    state.docKeywordCounts = {};
+    state.docKeywordResults = [];
     state._docPageHtmls = null;
     state._docPageOffsets = null;
 

@@ -169,10 +169,16 @@ export interface State {
     searchResultsByPage: SearchResultsByPage;
     currentMatchIndex: number;
     searchCache: Record<string, SearchResult[]>;
+    /** Every keyword has been precomputed for the open document. */
+    searchDeduplicated: boolean;
 
     docSearchResults: SearchResult[];
     docCurrentMatchIndex: number;
     docOriginalHtml: string | null;
+    /** DOCX: keyword counts for the open document (used by the grid/select). */
+    docKeywordCounts: Record<string, number>;
+    /** DOCX: every keyword match in the open document, for cycle-all. */
+    docKeywordResults: any[];
 
     pageHeights: Record<number, number>;
     renderedPages: Set<number>;

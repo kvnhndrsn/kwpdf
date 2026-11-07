@@ -11,7 +11,7 @@ setJSZip(JSZip);
 setMammoth(mammoth);
 setBasePath(basePath);
 
-import { state } from './state';
+import { state, createSearchCache } from './state';
 import * as dom from './dom';
 import { register, fn, setPdfjsLib, setJSZip, setMammoth, setBasePath } from './cross';
 
@@ -151,7 +151,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     dom.keywordListSelect.addEventListener('change', () => {
         const listName = dom.keywordListSelect.value;
         if (keywords.switchKeywordList(listName)) {
-            state.searchCache = {};
+            state.searchCache = createSearchCache();
+            state.searchDeduplicated = false;
             ui.clearSearch();
             if (state.objectUrls.length > 0) fileHandler.rescanAllDocuments();
         }

@@ -198,7 +198,6 @@ function loadPDF(fileUrl, keyword = '') {
                 // Populate sidebar keyword counts from search results
                 const counts = {};
                 for (const [kw, matches] of Object.entries(state.searchCache)) {
-                    if (kw === '_deduplicated') continue;
                     counts[kw] = matches.length;
                 }
                 if (state.docDataCache[fileUrl]) {
@@ -233,7 +232,7 @@ function loadPDF(fileUrl, keyword = '') {
             if (!keyword) {
                 const entries = Object.entries(state.searchCache);
                 for (const [k, v] of entries) {
-                    if (k !== '_deduplicated' && v.length > 0) {
+                    if (v.length > 0) {
                         keyword = k;
                         break;
                     }
