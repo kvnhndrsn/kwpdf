@@ -782,7 +782,7 @@ export function setupEventListeners() {
         updateMeasureUI();
     });
     dom.clearMeasureBtn?.addEventListener('click', () => {
-        measure.clearAllMeasurements();
+        measure.clearMeasurementsForCurrentDoc();
         updateMeasureUI();
     });
 

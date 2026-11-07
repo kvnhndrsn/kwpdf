@@ -278,7 +278,11 @@ export function cancelMeasurement() {
     renderAllMeasurements();
 }
 
-export function clearAllMeasurements() {
+/**
+ * Delete every measurement belonging to the currently open document.
+ * Other documents keep theirs; the toolbar button reflects this scope.
+ */
+export function clearMeasurementsForCurrentDoc() {
     const url = getDocKey();
     if (!url) return;
     delete measurementsByDoc[url];

@@ -107,7 +107,7 @@ register('setScale', measure.setScale);
 register('getActiveTool', measure.getActiveTool);
 register('activateTool', measure.activateTool);
 register('deactivateTool', measure.deactivateTool);
-register('clearMeasurements', measure.clearAllMeasurements);
+register('clearMeasurements', measure.clearMeasurementsForCurrentDoc);
 register('refreshAllMeasurements', measure.refreshAllMeasurements);
 register('renderAllMeasurements', measure.renderAllMeasurements);
 register('cancelCalibration', measure.cancelCalibration);
