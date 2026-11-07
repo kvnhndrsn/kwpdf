@@ -187,3 +187,14 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - 12 real findings fixed: unused imports (`getKeywordRegex` in keywords.ts, `fn` in ocr.ts, `ocr` namespace and `RawSearchResult` type in ui.ts, `processTextContent` in pdf-loader.ts, `SearchResult` in pdf-highlights.ts), unused variables (`ocrTotalPages` with both its writes, `hasDocx`, `pageText`, `displayText`, an unused `pageBreak` fixture helper, an unused `saveKeywords`), two `let` → `const`, a parenthesised assignment in a `while`, and an empty `if` branch in the calibrate handler.
 - Observation, not changed: the `displayText` removed from `rendering.ts` was computing "3/13"-style match position for the tree count but was never assigned to the span, which always shows the total. If that progress display was intended, it is a bug rather than dead code.
 - Verified: eslint 0, `format:check` 0, typecheck 0 (both projects), 257 tests / 20 files, build 0.
+
+## E2 — end-to-end smoke tests
+
+- `playwright.config.js` runs against a real build: the `webServer` command rebuilds (`node build.js`), regenerates fixtures, and serves `dist/` on 127.0.0.1:8897, so `npm run e2e` is self-contained. Chromium only, no retries locally, one retry in CI, trace kept on failure.
+- `e2e/smoke.spec.js` drops fixtures through the same path the app uses (`#folderInput` plus a `change` event with a `DataTransfer`), because there is no upload endpoint to drive.
+- PDF: `one-kw.pdf` scans to a non-zero tree count; opening it paints `div.highlight-mark` overlays (not `<mark>`, which is the DOCX path) with exactly one `.current`, and next/prev move the counter 1 → 2 → 1.
+- DOCX: `waiting.docx` (geotextile on pages 7, 14 … 49) scans to 7, and the current mark sits in the page whose text contains "Section 7", then "Section 14" after one step — the page-attribution regression, asserted on the mark's own page rather than the counter.
+- HTML-ish folder: dropping a file under a folder literally named `<b>x</b>` creates no `<b>` element in the sidebar and keeps the characters as text.
+- Two findings while writing it: `repeated-3.docx` scans to zero because its text uses "tender", which is not in the shipped keyword list (the fixture only makes sense for ad-hoc search), so the DOCX case uses `waiting.docx`; and a folder name containing slashes (`<b>x</b>`) is split into extra tree levels by the app's path parsing — pre-existing behaviour, so the test asserts escaping rather than nesting.
+- CI installs Chromium (`npx playwright install --with-deps chromium`) and runs `npm run e2e` after the build. `test-results/`, `playwright-report/` are gitignored and excluded from ESLint.
+- Verified: e2e 3/3 passing, eslint 0, format:check 0, typecheck 0, 257 unit tests.

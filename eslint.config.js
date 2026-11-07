@@ -12,7 +12,16 @@ const BUILD_DEFINES = {
 };
 
 export default [
-    { ignores: ['dist/**', 'dist-types/**', 'node_modules/**', 'coverage/**'] },
+    {
+        ignores: [
+            'dist/**',
+            'dist-types/**',
+            'node_modules/**',
+            'coverage/**',
+            'playwright-report/**',
+            'test-results/**',
+        ],
+    },
     js.configs.recommended,
     ...tseslint.configs.recommended,
     {

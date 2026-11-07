@@ -11,8 +11,9 @@
     "bench": "vitest bench --run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.strict.json",
     "lint": "eslint .",
-    "format": "prettier --write \"src/**/*.{ts,js}\" \"*.js\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js}\" \"*.js\""
+    "e2e": "playwright test",
+    "format": "prettier --write \"src/**/*.{ts,js}\" \"e2e/**/*.js\" \"*.js\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js}\" \"e2e/**/*.js\" \"*.js\""
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^25.9.1",
     "esbuild": "^0.25.2",
     "eslint": "^9.39.5",
