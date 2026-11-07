@@ -6,8 +6,8 @@
 
 import { register } from './cross';
 import * as dom from './dom';
-import { buildResultRows } from './export-results';
-import type { ResultRow } from './export-results';
+import { buildResultRows } from './result-rows';
+import type { ResultRow } from './result-rows';
 
 /** Rows rendered at once; a large folder would otherwise build thousands of nodes. */
 const MAX_ROWS = 500;

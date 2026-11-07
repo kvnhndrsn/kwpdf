@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { buildResultRows, collectPageHits, escapeCsvField, toCsv, CSV_HEADER } from '../export-results';
+import { buildResultRows, collectPageHits } from '../result-rows';
 
 function doc(name, folder, url, counts, extra = {}) {
     return { name, folder, fullPath: (folder ? folder + '/' : '') + name, url, type: 'pdf', counts, ...extra };
@@ -127,47 +127,5 @@ describe('buildResultRows', () => {
 
         expect(rows.some((r) => r.file === 'D.pdf')).toBe(false);
         expect([...paths].sort((a, b) => a.localeCompare(b))).toEqual(paths);
-    });
-});
-
-describe('escapeCsvField', () => {
-    it('leaves simple values alone', () => {
-        expect(escapeCsvField('report.pdf')).toBe('report.pdf');
-        expect(escapeCsvField(12)).toBe('12');
-        expect(escapeCsvField(null)).toBe('');
-    });
-
-    it('quotes commas, quotes and newlines', () => {
-        expect(escapeCsvField('a,b')).toBe('"a,b"');
-        expect(escapeCsvField('say "hi"')).toBe('"say ""hi"""');
-        expect(escapeCsvField('line1\nline2')).toBe('"line1\nline2"');
-        expect(escapeCsvField('crlf\r\nhere')).toBe('"crlf\r\nhere"');
-    });
-
-    it('quotes leading and trailing whitespace so it survives a round trip', () => {
-        expect(escapeCsvField(' padded ')).toBe('" padded "');
-    });
-});
-
-describe('toCsv', () => {
-    it('writes the header, one line per row and CRLF endings', () => {
-        const csv = toCsv([
-            {
-                file: 'a,b.pdf',
-                folder: 'x',
-                page: 2,
-                keyword: 'say "hi"',
-                count: 1,
-                snippet: 'line1\nline2',
-                ocr: true,
-            },
-            { file: 'c.pdf', folder: '', page: null, keyword: 'heat', count: 3, snippet: '', ocr: false },
-        ]);
-        const lines = csv.split('\r\n');
-
-        expect(lines[0]).toBe(CSV_HEADER.join(','));
-        expect(lines[1]).toBe('"a,b.pdf",x,2,"say ""hi""",1,"line1\nline2",yes');
-        expect(lines[2]).toBe('c.pdf,,,heat,3,,');
-        expect(csv.endsWith('\r\n')).toBe(true);
     });
 });

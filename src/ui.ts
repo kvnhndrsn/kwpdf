@@ -4,7 +4,6 @@ import { fn } from './cross';
 import * as measure from './measure';
 import { getFileType, isScanRunning, openFolderFiles } from './file-handler';
 import { isOcrRunning } from './ocr';
-import { exportResultsCsv } from './export-results';
 import { clearTextCache } from './text-store';
 import { closeResultsPanel, initResultsPanel, setJumpHandler } from './results-panel';
 import {
@@ -893,11 +892,6 @@ export function setupEventListeners() {
     dom.findNextBtn?.addEventListener('click', findNext);
     dom.clearSearchBtn?.addEventListener('click', clearSearch);
     dom.clearAllBtn?.addEventListener('click', clearAllResults);
-    dom.exportCsvBtn?.addEventListener('click', () => {
-        const rows = exportResultsCsv();
-        dom.statusBar.textContent =
-            rows === 0 ? 'No results to export' : `Exported ${rows} row${rows === 1 ? '' : 's'} to CSV`;
-    });
     dom.settingsBtn?.addEventListener('click', toggleSettings);
     dom.clearTextCacheBtn?.addEventListener('click', async () => {
         closeSettings();

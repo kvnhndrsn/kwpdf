@@ -64,7 +64,6 @@ export let findPrevBtn: HTMLElement | null = null;
 export let findNextBtn: HTMLElement | null = null;
 export let clearSearchBtn: HTMLElement | null = null;
 export let clearAllBtn: HTMLElement | null = null;
-export let exportCsvBtn: HTMLElement | null = null;
 export let reopenFolderBtn: HTMLElement | null = null;
 export let mobileToggleBtn: HTMLElement | null = null;
 export let calibrateScaleBtn: HTMLElement | null = null;
@@ -142,7 +141,6 @@ export function init(): void {
     findNextBtn = document.getElementById('findNextBtn');
     clearSearchBtn = document.getElementById('clearSearchBtn');
     clearAllBtn = document.getElementById('clearAllBtn');
-    exportCsvBtn = document.getElementById('exportCsvBtn');
     reopenFolderBtn = document.getElementById('reopenFolderBtn');
     mobileToggleBtn = document.getElementById('mobileToggleBtn');
     calibrateScaleBtn = document.getElementById('calibrateScaleBtn');

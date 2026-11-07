@@ -1,10 +1,8 @@
-// Export the scan results as CSV.
+// One row per (document, keyword, page) for the results panel.
 //
-// The row model is one row per (document, keyword, page) so the file can be
-// worked through in a spreadsheet: pages come from re-running the same keyword
-// regex over the cached page text the scanner used, and OCR-only counts (which
-// never enter the page text cache) are exported as their own rows with the page
-// left blank.
+// Pages come from re-running the same keyword regex over the cached page text
+// the scanner used, and OCR-only counts (which never enter the page text cache)
+// become their own rows with the page left blank.
 
 import { state } from './state';
 import type { DocDataCacheEntry, State } from './types';
@@ -23,8 +21,6 @@ export interface ResultRow {
     snippet: string;
     ocr: boolean;
 }
-
-export const CSV_HEADER = ['File', 'Folder', 'Page', 'Keyword', 'Count', 'Snippet', 'OCR'];
 
 const SNIPPET_CONTEXT = 40;
 
@@ -104,11 +100,11 @@ function compareRows(a: ResultRow, b: ResultRow): number {
 }
 
 /**
- * Build the export rows from the current library.
+ * Build the result rows from the current library.
  *
  * `counts` already includes OCR matches; `_ocrCounts` says how many of them came
  * from OCR. Whatever the cached text cannot account for (an evicted text cache,
- * OCR-only pages) is still exported with a blank page so the totals add up to
+ * OCR-only pages) is still reported with a blank page so the totals add up to
  * the counts the tree shows.
  */
 export function buildResultRows(snapshot: State = state): ResultRow[] {
@@ -172,48 +168,4 @@ export function buildResultRows(snapshot: State = state): ResultRow[] {
     }
 
     return rows.sort(compareRows);
-}
-
-/** RFC 4180 quoting: only when the value needs it, doubling inner quotes. */
-export function escapeCsvField(value: string | number | null | undefined): string {
-    const text = value === null || value === undefined ? '' : String(value);
-    if (/[",\r\n]/.test(text) || /^\s|\s$/.test(text)) {
-        return '"' + text.replace(/"/g, '""') + '"';
-    }
-    return text;
-}
-
-export function toCsv(rows: ResultRow[]): string {
-    const lines = [CSV_HEADER.join(',')];
-    for (const row of rows) {
-        lines.push(
-            [row.file, row.folder, row.page, row.keyword, row.count, row.snippet, row.ocr ? 'yes' : '']
-                .map(escapeCsvField)
-                .join(','),
-        );
-    }
-    return lines.join('\r\n') + '\r\n';
-}
-
-function fileName(): string {
-    const day = new Date().toISOString().slice(0, 10);
-    return `kwpdf-results-${day}.csv`;
-}
-
-/** Download the library's results as CSV. Returns the number of rows written. */
-export function exportResultsCsv(): number {
-    const rows = buildResultRows();
-    if (rows.length === 0) return 0;
-
-    const blob = new Blob(['\uFEFF' + toCsv(rows)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName();
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-
-    return rows.length;
 }
