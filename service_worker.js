@@ -17,6 +17,12 @@ const LOCAL_ASSETS = [
     // visitor who never uses OCR does not download them.
     './tesseract/tesseract.min.js',
     './tesseract/worker.min.js',
+    // The two runtime workers the app itself starts. Both URLs carry the build
+    // hash (worker-pool.js, ocr.ts), and a cache hit needs an exact URL, so the
+    // precached entry carries the same query — that is what makes a rebuilt
+    // worker script impossible to serve from an older cache.
+    './utils/doc_processor_worker.js?h=__CACHE_VERSION__',
+    './utils/ocr_worker.js?h=__CACHE_VERSION__',
 ];
 
 self.addEventListener('install', event => {

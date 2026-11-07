@@ -60,6 +60,12 @@ describe('WorkerPool', () => {
         expect(instances[0].url).toBe('utils/doc_processor_worker.js');
     });
 
+    it('adds the build hash to the worker URL when the build defines one', () => {
+        vi.stubGlobal('__BUNDLE_HASH__', 'abc12345');
+        makePool(1);
+        expect(instances[0].url).toBe('utils/doc_processor_worker.js?h=abc12345');
+    });
+
     it('dispatches only up to poolSize tasks and queues the rest', () => {
         const pool = makePool(2);
         for (let i = 0; i < 5; i++) pool.runRegexOnText('t' + i, 'f', ['kw'], 'docx', 'k' + i);

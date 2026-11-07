@@ -29,8 +29,14 @@ export class WorkerPool {
 
     init() {
         if (this.initialized) return;
+        // Same build-hash query as ocr.ts: without it the service worker could
+        // serve a worker script from a cache that predates the build asking for
+        // it. The guard is for contexts without the esbuild define (vitest),
+        // where `typeof` on an undeclared identifier is safe and the query is
+        // simply omitted.
+        const hash = typeof __BUNDLE_HASH__ === 'string' ? '?h=' + __BUNDLE_HASH__ : '';
         for (let i = 0; i < this.poolSize; i++) {
-            const worker = new Worker(WORKER_BASE + 'doc_processor_worker.js');
+            const worker = new Worker(WORKER_BASE + 'doc_processor_worker.js' + hash);
             worker.onmessage = (e) => this._handleWorkerMessage(worker, e);
             worker.onerror = (err) => this._handleWorkerError(worker, err);
             this.workers.push(worker);
