@@ -1,5 +1,5 @@
 import type { PageCacheEntry, RawSearchResult, TextCoords, DocDataCacheEntry, PdfCacheEntry, DocxCacheEntry } from './types';
-import { projectItemBox, boxesOverlap, unionBoxes, type ProjectedBox } from './pdf-coords';
+import { projectItemBox, unionBoxes, sameTextLine, type ProjectedBox } from './pdf-coords';
 
 const GS_CHUNK_SIZE = 20;
 
@@ -128,9 +128,11 @@ export function getTextCoords(
     const transform = viewport && viewport.transform;
 
     if (transform) {
-        // Walk the items once, projecting each run that the range touches.
-        let box: ProjectedBox | null = null;
-        let found = false;
+        // Walk the items once, projecting each run that the range touches. Runs
+        // on one text line are unioned; a run on a following line starts a new
+        // fragment, so a wrapped match is covered on both lines.
+        const boxes: ProjectedBox[] = [];
+        let fragmentItem: ItemOffsets['items'][number] | null = null;
 
         for (let i = first; i < items.length; i++) {
             const item = items[i];
@@ -139,23 +141,30 @@ export function getTextCoords(
 
             if (endIndex <= itemStart) break;
             if (startIndex >= itemEnd) continue;
+            if (!item.text.length) continue;
 
             const from = Math.max(0, (startIndex - itemStart) / item.text.length);
             const to = Math.min(1, (endIndex - itemStart) / item.text.length);
             if (to <= from) continue;
 
             const itemBox = projectItemBox(item, transform, from, to);
-            box = box && boxesOverlap(box, itemBox) ? unionBoxes(box, itemBox) : (box ?? itemBox);
-            found = true;
+            if (fragmentItem && boxes.length > 0 && sameTextLine(fragmentItem, item)) {
+                boxes[boxes.length - 1] = unionBoxes(boxes[boxes.length - 1], itemBox);
+            } else {
+                boxes.push(itemBox);
+                fragmentItem = item;
+            }
         }
 
-        if (!found || !box) return null;
+        if (boxes.length === 0) return null;
+        const box = boxes[0];
         return {
             startX: box.x,
             startY: box.y,
             endX: box.x + box.width,
             endY: box.y + box.height,
-            height: box.height
+            height: box.height,
+            boxes
         };
     }
 

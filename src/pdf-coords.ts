@@ -81,6 +81,19 @@ export function projectItemBox(
     };
 }
 
+/**
+ * True when two text runs sit on the same text line, judged by their baselines
+ * in PDF user space. This is the rule `processTextContent` uses to decide
+ * whether it inserted a space or a line break between two runs, so match
+ * fragments break exactly where the extracted text broke.
+ */
+export function sameTextLine(a: { transform: number[] }, b: { transform: number[] }): boolean {
+    const a0 = a.transform || [];
+    const b0 = b.transform || [];
+    const size = Math.hypot(a0[0] || 0, a0[1] || 0) || 12;
+    return Math.abs((a0[5] || 0) - (b0[5] || 0)) <= size * 0.5;
+}
+
 /** True when two projected boxes share area (touching edges do not count). */
 export function boxesOverlap(a: ProjectedBox, b: ProjectedBox, epsilon = 0.01): boolean {
     return (

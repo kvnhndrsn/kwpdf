@@ -345,6 +345,41 @@ describe('countMatchesInAllDocs scheduling', () => {
     });
 });
 
+describe('getTextCoords wrapped matches', () => {
+    const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
+
+    function cached(items) {
+        return { text: items.map(i => i.text).join(''), viewport, items };
+    }
+
+    it('returns one box per line fragment for a wrapped match', () => {
+        const page = cached([
+            { text: 'heat', transform: [10, 0, 0, 10, 0, 100], width: 22, height: 10 },
+            { text: ' ', transform: [10, 0, 0, 10, 22, 80], width: 3, height: 10 },
+            { text: 'bonded', transform: [10, 0, 0, 10, 0, 80], width: 36, height: 10 },
+        ]);
+
+        const coords = getTextCoords(page, 0, 11);
+
+        expect(coords.boxes).toHaveLength(2);
+        expect(coords.startX).toBeCloseTo(0, 1);
+        expect(coords.boxes[1].y).toBeCloseTo(coords.boxes[0].y + 20, 1);
+    });
+
+    it('keeps a single box when every run is on the same line', () => {
+        const page = cached([
+            { text: 'heat', transform: [10, 0, 0, 10, 0, 100], width: 22, height: 10 },
+            { text: ' ', transform: [10, 0, 0, 10, 22, 100], width: 3, height: 10 },
+            { text: 'bonded', transform: [10, 0, 0, 10, 25, 100], width: 36, height: 10 },
+        ]);
+
+        const coords = getTextCoords(page, 0, 11);
+
+        expect(coords.boxes).toHaveLength(1);
+        expect(coords.endX - coords.startX).toBeCloseTo(61, 1);
+    });
+});
+
 describe('getTextCoords item lookup', () => {
     function item(text, x, width = 30) {
         return { text, transform: [10, 0, 0, 10, x, 200], width, height: 12 };

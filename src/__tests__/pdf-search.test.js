@@ -193,6 +193,43 @@ describe('computeMatchCoords', () => {
         expect(coords.x).toBeCloseTo(50, 1);
         expect(coords.y).toBeCloseTo(800 - (100 + 10), 1);
     });
+
+    it('returns one box per line fragment when the match wraps', () => {
+        // "heat bonded" with the break between the two words: the second run
+        // sits on the next baseline, so it cannot be unioned into the first box.
+        const textItems = [
+            { text: 'heat', transform: [10, 0, 0, 10, 0, 100], width: 22, height: 10 },
+            { text: ' ', transform: [10, 0, 0, 10, 22, 80], width: 3, height: 10 },
+            { text: 'bonded', transform: [10, 0, 0, 10, 0, 80], width: 36, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 11, viewport, textItems, offsetMap);
+
+        expect(coords.boxes).toHaveLength(2);
+        // The anchor stays on the first fragment, which is what scrolling uses.
+        expect(coords.x).toBeCloseTo(0, 1);
+        expect(coords.width).toBeCloseTo(22, 1);
+        expect(coords.boxes[1].y).toBeCloseTo(coords.y + 20, 1);
+        expect(coords.boxes[1].width).toBeCloseTo(36, 1);
+    });
+
+    it('keeps one box for a match that stays on one line', () => {
+        const textItems = [
+            { text: 'heat', transform: [10, 0, 0, 10, 0, 100], width: 22, height: 10 },
+            { text: ' ', transform: [10, 0, 0, 10, 22, 100], width: 3, height: 10 },
+            { text: 'bonded', transform: [10, 0, 0, 10, 25, 100], width: 36, height: 10 },
+        ];
+        const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
+        const offsetMap = buildOffsetMap(textItems);
+
+        const coords = computeMatchCoords(0, 11, viewport, textItems, offsetMap);
+
+        expect(coords.boxes).toHaveLength(1);
+        expect(coords.width).toBeCloseTo(61, 1);
+        expect(coords.boxes[0]).toEqual({ x: coords.x, y: coords.y, width: coords.width, height: coords.height });
+    });
 });
 
 describe('precomputeAllSearches', () => {

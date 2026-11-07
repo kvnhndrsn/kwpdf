@@ -1,7 +1,7 @@
 import { state, isCurrentGeneration, beginSearch, isCurrentSearch } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
-import { projectItemBox, boxesOverlap, unionBoxes } from './pdf-coords';
+import { projectItemBox, unionBoxes, sameTextLine } from './pdf-coords';
 import { fn, KEYWORDS } from './cross';
 import { clearHighlights, renderAllHighlights } from './pdf-highlights';
 
@@ -74,7 +74,16 @@ export function findEndItem(endPos, startIdx, offsets, items) {
     return { item: items[lo], charStart: offsets[lo], index: lo };
 }
 
-export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, offsetMap) {
+/**
+ * Project a match onto the page, one box per line fragment.
+ *
+ * A phrase split by a line break ("heat" / "bonded") used to lose its second
+ * fragment: the two boxes do not overlap, so one of them was discarded. Both
+ * fragments are returned now, in reading order, and the caller paints each.
+ * Runs on the same line are still unioned into a single box so ordinary
+ * matches keep one mark.
+ */
+export function computeMatchBoxes(matchStart, matchEnd, viewport, textItems, offsetMap) {
     const start = findStartItem(matchStart, offsetMap.offsets, textItems);
     const end = findEndItem(matchEnd, start.index, offsetMap.offsets, textItems);
 
@@ -85,24 +94,55 @@ export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, of
 
     const transform = viewport && viewport.transform;
 
-    if (transform) {
-        const startBox = projectItemBox(start.item, transform, startCharFrac, 1);
-        if (start.index === end.index || !end.item) {
-            return startBox;
-        }
-        const endBox = projectItemBox(end.item, transform, 0, endCharFrac);
-        // A match continuing onto another line cannot be drawn as one box;
-        // highlight the first fragment rather than a box spanning both lines.
-        return boxesOverlap(startBox, endBox) ? unionBoxes(startBox, endBox) : startBox;
+    if (!transform) {
+        const offsetY = viewport.offsetY || 0;
+        const sx = start.item.transform[4] + startCharFrac * start.item.width;
+        const sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
+        const endX = end.item.transform[4] + endCharFrac * end.item.width;
+        const height = start.item.height;
+        const width = Math.max(endX - sx, 4);
+        return [{ x: sx, y: sy, width, height }];
     }
 
-    const offsetY = viewport.offsetY || 0;
-    const sx = start.item.transform[4] + startCharFrac * start.item.width;
-    const sy = (viewport.height + offsetY) - (start.item.transform[5] + start.item.height);
-    const endX = end.item.transform[4] + endCharFrac * end.item.width;
-    const height = start.item.height;
-    const width = Math.max(endX - sx, 4);
-    return { x: sx, y: sy, width, height };
+    const boxes = [];
+    let fragmentItem = null;
+
+    for (let i = start.index; i <= end.index; i++) {
+        const item = textItems[i];
+        if (!item || !item.text || item.text.length === 0) continue;
+        const itemStart = offsetMap.offsets[i];
+        const itemEnd = itemStart + item.text.length;
+        if (matchEnd <= itemStart) break;
+        if (matchStart >= itemEnd) continue;
+
+        const from = Math.max(0, (matchStart - itemStart) / item.text.length);
+        const to = Math.min(1, (matchEnd - itemStart) / item.text.length);
+        if (to <= from) continue;
+
+        const box = projectItemBox(item, transform, from, to);
+        if (fragmentItem && boxes.length > 0 && sameTextLine(fragmentItem, item)) {
+            boxes[boxes.length - 1] = unionBoxes(boxes[boxes.length - 1], box);
+        } else {
+            boxes.push(box);
+            fragmentItem = item;
+        }
+    }
+
+    if (boxes.length === 0) {
+        boxes.push(projectItemBox(start.item, transform, startCharFrac, 1));
+    }
+    return boxes;
+}
+
+/**
+ * Single-box view of a match, kept for callers that only need an anchor.
+ * `x`/`y`/`width`/`height` describe the first fragment and `boxes` carries
+ * every fragment for painting.
+ */
+export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, offsetMap) {
+    const boxes = computeMatchBoxes(matchStart, matchEnd, viewport, textItems, offsetMap);
+    const first = boxes[0] || { x: 0, y: 0, width: 0, height: 0 };
+    return { x: first.x, y: first.y, width: first.width, height: first.height, boxes };
 }
 
 export async function precomputeAllSearches() {

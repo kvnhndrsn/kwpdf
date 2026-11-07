@@ -39,6 +39,9 @@ export interface SearchResult {
     height: number | null;
     keyword?: string;
     ocr?: boolean;
+    /** One box per line fragment when the match wraps; x/y/width/height are
+     *  the first fragment, so scrolling and navigation stay unchanged. */
+    boxes?: MatchCoords[];
 }
 
 export interface SearchResultsByPage {
@@ -65,6 +68,8 @@ export interface TextCoords {
     endX: number;
     endY: number;
     height: number;
+    /** One box per line fragment; startX/startY/endX/endY describe the first. */
+    boxes?: MatchCoords[];
 }
 
 // ── Measure types ──

@@ -288,7 +288,8 @@ function performInlineSearch(query) {
             x: coords.startX,
             y: coords.startY,
             width: coords.endX - coords.startX,
-            height: coords.height
+            height: coords.height,
+            boxes: coords.boxes
         });
     }
 
@@ -397,13 +398,18 @@ function renderAllCustomHighlights() {
         const coords = getTextCoords(cached, result.startIndex, result.endIndex);
         if (!coords) continue;
 
-        const mark = document.createElement('div');
-        mark.className = 'custom-highlight' + (i === customSearchIndex ? ' current' : '');
-        mark.style.left = (coords.startX * state.currentScale) + 'px';
-        mark.style.top = (coords.startY * state.currentScale) + 'px';
-        mark.style.width = ((coords.endX - coords.startX) * state.currentScale) + 'px';
-        mark.style.height = (coords.height * state.currentScale) + 'px';
-        pageEl.appendChild(mark);
+        const boxes = coords.boxes && coords.boxes.length > 0
+            ? coords.boxes
+            : [{ x: coords.startX, y: coords.startY, width: coords.endX - coords.startX, height: coords.height }];
+        for (const box of boxes) {
+            const mark = document.createElement('div');
+            mark.className = 'custom-highlight' + (i === customSearchIndex ? ' current' : '');
+            mark.style.left = (box.x * state.currentScale) + 'px';
+            mark.style.top = (box.y * state.currentScale) + 'px';
+            mark.style.width = (box.width * state.currentScale) + 'px';
+            mark.style.height = (box.height * state.currentScale) + 'px';
+            pageEl.appendChild(mark);
+        }
     }
 
     const currentResultCoords = getTextCoords(state.textPageCache[currentPage], currentResult.startIndex, currentResult.endIndex);

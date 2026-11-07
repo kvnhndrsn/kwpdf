@@ -16,11 +16,26 @@ import type { SearchResult } from './types';
 /** Pages that currently carry highlight marks. */
 const decoratedPages = new Set<number>();
 
-function paint(el: HTMLElement, result: SearchResult, scale: number): void {
-    el.style.left = (result.x * scale) + 'px';
-    el.style.top = (result.y * scale) + 'px';
-    el.style.width = (result.width * scale) + 'px';
-    el.style.height = (result.height * scale) + 'px';
+interface Box { x: number; y: number; width: number; height: number }
+
+function paint(el: HTMLElement, box: Box, scale: number): void {
+    el.style.left = (box.x * scale) + 'px';
+    el.style.top = (box.y * scale) + 'px';
+    el.style.width = (box.width * scale) + 'px';
+    el.style.height = (box.height * scale) + 'px';
+}
+
+/** Reconcile key for a mark: `idx` on one line, `idx:part` when wrapped. */
+function markKey(el: HTMLElement): string | null {
+    const idx = el.dataset.idx;
+    if (idx === undefined) return null;
+    return el.dataset.part !== undefined ? idx + ':' + el.dataset.part : idx;
+}
+
+function setCurrentMark(index: number, on: boolean): void {
+    document.querySelectorAll<HTMLElement>(`.highlight-mark[data-idx="${index}"]`).forEach(el => {
+        el.classList.toggle('current', on);
+    });
 }
 
 /** Bring one page's marks in line with its results, touching only what changed. */
@@ -30,14 +45,26 @@ function applyPage(pageNum: number): void {
 
     const existing = new Map<string, HTMLElement>();
     pageEl.querySelectorAll<HTMLElement>('.highlight-mark').forEach(el => {
-        const idx = el.dataset.idx;
-        if (idx !== undefined) existing.set(idx, el);
+        const key = markKey(el);
+        if (key !== null) existing.set(key, el);
     });
 
-    const wanted = new Map<string, SearchResult>();
+    // A match that wraps onto a second line gets one mark per line fragment; a
+    // match on one line keeps the single-key form so an existing mark is
+    // repositioned instead of being recreated.
+    const wanted = new Map<string, Box>();
     for (const { result, globalIndex } of state.searchResultsByPage[pageNum] || []) {
         if (result.x === null) continue;
-        wanted.set(String(globalIndex), result);
+        if (result.boxes && result.boxes.length > 0) {
+            result.boxes.forEach((box, part) => wanted.set(globalIndex + ':' + part, box));
+        } else {
+            wanted.set(String(globalIndex), {
+                x: result.x,
+                y: result.y,
+                width: result.width,
+                height: result.height,
+            });
+        }
     }
 
     const plan = planHighlightSync(existing.keys(), wanted.keys());
@@ -51,17 +78,19 @@ function applyPage(pageNum: number): void {
     for (const key of plan.create) {
         const mark = document.createElement('div');
         mark.className = 'highlight-mark';
-        mark.dataset.idx = key;
+        const [idx, part] = key.split(':');
+        mark.dataset.idx = idx;
+        if (part !== undefined) mark.dataset.part = part;
         existing.set(key, mark);
         fragment.appendChild(mark);
     }
 
     const scale = state.currentScale;
-    for (const [key, result] of wanted) {
+    for (const [key, box] of wanted) {
         const mark = existing.get(key);
         if (!mark) continue;
-        paint(mark, result, scale);
-        mark.classList.toggle('current', Number(key) === state.currentMatchIndex);
+        paint(mark, box, scale);
+        mark.classList.toggle('current', Number(mark.dataset.idx) === state.currentMatchIndex);
     }
 
     if (fragment.childNodes.length) pageEl.appendChild(fragment);
@@ -86,19 +115,21 @@ export function renderHighlightsForPage(pageNum: number): void {
 
 export function updateCurrentMatch(oldIndex: number, newIndex: number): void {
     if (oldIndex === newIndex) return;
-    const prev = document.querySelector(`.highlight-mark[data-idx="${oldIndex}"]`);
-    const next = document.querySelector(`.highlight-mark[data-idx="${newIndex}"]`);
-    if (prev) prev.classList.remove('current');
-    if (next) next.classList.add('current');
+    // A wrapped match has several marks; all of its fragments are current.
+    setCurrentMark(oldIndex, false);
+    setCurrentMark(newIndex, true);
 }
 
 export function repositionHighlights(): void {
+    const scale = state.currentScale;
     for (const mark of document.querySelectorAll<HTMLElement>('.highlight-mark')) {
         const idx = parseInt(mark.dataset.idx);
         if (isNaN(idx)) continue;
         const result = state.searchResults[idx];
         if (!result || result.x === null) continue;
-        paint(mark, result, state.currentScale);
+        const part = mark.dataset.part === undefined ? -1 : Number(mark.dataset.part);
+        const box = part >= 0 && result.boxes && result.boxes[part] ? result.boxes[part] : result;
+        paint(mark, box, scale);
     }
 }
 

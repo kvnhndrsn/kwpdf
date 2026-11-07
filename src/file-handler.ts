@@ -281,6 +281,8 @@ async function processFiles(files) {
 
     state.processed = 0;
     state.totalFiles = Math.min(files.length, state.MAX_TOTAL_FILES);
+    // The cap silently dropped the tail of a large drop; report it instead.
+    const skippedByLimit = Math.max(0, files.length - state.totalFiles);
     let failedCount = 0;
 
     // Throttle sidebar tree rebuilds for the duration of the scan: one full
@@ -350,6 +352,16 @@ async function processFiles(files) {
 
     if (failedCount > 0) {
         dom.statusBar.textContent = failedCount + ' file(s) failed to process';
+    }
+
+    if (skippedByLimit > 0) {
+        const note = document.createElement('div');
+        note.className = 'status-msg';
+        note.textContent = skippedByLimit + ' file(s) skipped — only the first ' +
+            state.MAX_TOTAL_FILES + ' files of a drop are scanned';
+        dom.resultsArea.prepend(note);
+        dom.statusBar.textContent += (dom.statusBar.textContent ? ' · ' : '') +
+            skippedByLimit + ' skipped (limit ' + state.MAX_TOTAL_FILES + ')';
     }
 }
 
@@ -474,6 +486,9 @@ async function extractAllFromZip(zipFile) {
     entries.sort((a, b) => (a.entry._data && a.entry._data.uncompressedSize || 0) - (b.entry._data && b.entry._data.uncompressedSize || 0));
 
     const total = Math.min(entries.length, state.MAX_TOTAL_FILES);
+    if (entries.length > total) {
+        showFileError(zipFile.name, (entries.length - total) + ' file(s) in the archive skipped (limit ' + state.MAX_TOTAL_FILES + ')');
+    }
     const concurrency = Math.min(navigator.hardwareConcurrency || 4, 8);
     const extracted = [];
     let done = 0;
@@ -528,6 +543,11 @@ async function extractAllFromZip(zipFile) {
 }
 
 export function initFileHandler() {
+    // Create the text-processing pool once, at startup. It used to be created
+    // lazily by the first rescan, so a freshly loaded app processed its first
+    // imports synchronously on the main thread.
+    initWorkerPool();
+
     dom.sidebar.addEventListener('drop', (e) => {
         e.preventDefault();
         handleDrop(e);
