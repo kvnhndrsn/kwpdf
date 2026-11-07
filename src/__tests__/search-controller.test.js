@@ -345,6 +345,20 @@ describe('countMatchesInAllDocs scheduling', () => {
     });
 });
 
+describe('search semantics', () => {
+    it('ad-hoc search is a substring match, keyword scans are word-bounded', () => {
+        const cache = {
+            1: { text: 'category catalogue', viewport: { width: 100, height: 100 }, items: null },
+        };
+
+        // The inline/global box has always been substring-based while keyword
+        // scans wrap the term in \b. Pinned so the difference is a decision
+        // rather than an accident — see the README caveat.
+        expect(searchTextPages(cache, 1, 'cat')).toHaveLength(2);
+        expect(new RegExp('\\bcat\\b', 'i').test('category catalogue')).toBe(false);
+    });
+});
+
 describe('getTextCoords wrapped matches', () => {
     const viewport = { width: 500, height: 800, transform: [1, 0, 0, -1, 0, 800] };
 

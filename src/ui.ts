@@ -118,6 +118,10 @@ export function clearAllResults() {
     // Drop queued worker jobs from the previous library, and reject anything
     // still in flight, so no cancelled scan settles into the cleared state.
     state.workerPool?.cancelStale?.(state.docGeneration);
+    // The pool otherwise keeps its workers alive with nothing left to scan;
+    // the next import creates a fresh one.
+    state.workerPool?.terminate?.();
+    state.workerPool = null;
     fn.teardownPdf();
 
     dom.viewer.innerHTML = '';
@@ -1345,6 +1349,10 @@ export function performGlobalSearch(query) {
 function _gsJumpToDoc(url, navigateToLast) {
     _gsPendingUrl = url;
     const requestedUrl = url;
+    // Bounded: a document that never loads must not leave a 200ms timer alive
+    // for the rest of the session.
+    let attempts = 0;
+    const maxAttempts = 25;
     const poll = () => {
         if (state.currentDocUrl !== requestedUrl) {
             if (_gsPendingUrl === requestedUrl) _gsPendingUrl = null;
@@ -1359,8 +1367,10 @@ function _gsJumpToDoc(url, navigateToLast) {
             state.globalSearchActiveDoc = url;
             activateGlobalSearch(navigateToLast);
             state.emit('results-changed');
-        } else {
+        } else if (attempts++ < maxAttempts) {
             setTimeout(poll, 200);
+        } else {
+            _gsPendingUrl = null;
         }
     };
 

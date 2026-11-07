@@ -14,6 +14,35 @@ export function setCallbacks(cbs) {
     _closeMobileSidebar = cbs.closeMobileSidebar;
 }
 
+/** How long a tree click waits for a document that is still loading. */
+const ACTIVATE_MAX_ATTEMPTS = 25;
+const ACTIVATE_INTERVAL_MS = 200;
+
+function isDocReady(doc) {
+    return doc.type === 'pdf'
+        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
+        : !!state.docContentCache[doc.url];
+}
+
+/**
+ * Run `onReady` once the clicked document finishes loading.
+ *
+ * The old loop retried every 200ms with no limit, so a document that failed to
+ * load (or never became active) left a timer running for the life of the page.
+ * Give up after a few seconds and say so.
+ */
+function whenDocReady(doc, onReady, attempt = 0): void {
+    if (isDocReady(doc)) {
+        onReady();
+        return;
+    }
+    if (attempt >= ACTIVATE_MAX_ATTEMPTS) {
+        dom.statusBar.textContent = 'Could not open ' + (doc.name || 'document') + ' — it did not finish loading';
+        return;
+    }
+    setTimeout(() => whenDocReady(doc, onReady, attempt + 1), ACTIVATE_INTERVAL_MS);
+}
+
 function getPathParts(file, baseFolderName) {
     let fileName;
     if (file && (file.relativePath || file.name)) fileName = file.relativePath || file.name;
@@ -188,21 +217,12 @@ function renderTree(node, path = '') {
                     _loadDocument(doc.url);
                 }
 
-                function tryActivateAndRender() {
-                    const isDocReady = doc.type === 'pdf'
-                        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
-                        : !!state.docContentCache[doc.url];
-
-                    if (isDocReady) {
-                        _closeMobileSidebar();
-                        if (doc.type === 'pdf') _cycleAllKeywords();
-                        else _cycleAllDocKeywords();
-                        renderResultsArea();
-                    } else {
-                        setTimeout(tryActivateAndRender, 200);
-                    }
-                }
-                tryActivateAndRender();
+                whenDocReady(doc, () => {
+                    _closeMobileSidebar();
+                    if (doc.type === 'pdf') _cycleAllKeywords();
+                    else _cycleAllDocKeywords();
+                    renderResultsArea();
+                });
             });
 
             fileSpan.appendChild(countSpan);
@@ -246,19 +266,11 @@ function renderTree(node, path = '') {
                     _loadDocument(doc.url);
                 }
 
-                function tryActivateAndRender() {
-                    const isDocReady = doc.type === 'pdf'
-                        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
-                        : !!state.docContentCache[doc.url];
-                    if (isDocReady) {
-                        state.globalSearchActiveDoc = doc.url;
-                        fn.activateGlobalSearch();
-                        renderResultsArea();
-                    } else {
-                        setTimeout(tryActivateAndRender, 200);
-                    }
-                }
-                tryActivateAndRender();
+                whenDocReady(doc, () => {
+                    state.globalSearchActiveDoc = doc.url;
+                    fn.activateGlobalSearch();
+                    renderResultsArea();
+                });
             });
 
             fileSpan.appendChild(searchCountSpan);
