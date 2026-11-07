@@ -4,6 +4,7 @@ import { fn } from './cross';
 import * as measure from './measure';
 import { isScanRunning } from './file-handler';
 import { isOcrRunning } from './ocr';
+import { exportResultsCsv } from './export-results';
 import * as keywords from './keywords';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from './search-controller';
 import type { RenderQuality, SearchResult } from './types';
@@ -757,6 +758,11 @@ export function setupEventListeners() {
     dom.findNextBtn?.addEventListener('click', findNext);
     dom.clearSearchBtn?.addEventListener('click', clearSearch);
     dom.clearAllBtn?.addEventListener('click', clearAllResults);
+    dom.exportCsvBtn?.addEventListener('click', () => {
+        const rows = exportResultsCsv();
+        dom.statusBar.textContent =
+            rows === 0 ? 'No results to export' : `Exported ${rows} row${rows === 1 ? '' : 's'} to CSV`;
+    });
     dom.settingsBtn?.addEventListener('click', toggleSettings);
     dom.mobileToggleBtn?.addEventListener('click', toggleMobileSidebar);
 

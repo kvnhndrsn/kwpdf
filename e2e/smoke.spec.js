@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
 // The app has no upload endpoint: a drop is a file input plus a change event, so
@@ -91,6 +92,24 @@ test('attributes DOCX matches to pages and navigates them', async ({ page }) => 
     await page.locator('#findNextBtn').click();
     await expect(page.locator('#matchInput')).toHaveValue('2');
     expect(await currentDocMatchPage(page)).toContain('Section 14');
+});
+
+test('exports the scan results as CSV', async ({ page }) => {
+    await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.click('#exportCsvBtn');
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toMatch(/^kwpdf-results-\d{4}-\d{2}-\d{2}\.csv$/);
+    const csv = await fs.readFile(await download.path(), 'utf8');
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const [header, ...rows] = csv.slice(1).trim().split('\r\n');
+    expect(header).toBe('File,Folder,Page,Keyword,Count,Snippet,OCR');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.startsWith('one-kw.pdf,') || row.startsWith('mixed.pdf,'))).toBe(true);
+    await expect(page.locator('#statusBar')).toContainText('Exported');
 });
 
 test('opens a document from the results tree with the keyboard', async ({ page }) => {

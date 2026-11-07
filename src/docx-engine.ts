@@ -46,7 +46,9 @@ function resetDocHighlights() {
 
 // ── helpers ──
 
-function splitHtmlIntoPages(html, targetPerPage = 3000) {
+/** Split document HTML into viewer pages. Exported so the CSV export can use
+ *  the same page boundaries the viewer attributed matches to. */
+export function splitHtmlIntoPages(html, targetPerPage = 3000) {
     // First, split at explicit <hr> page breaks (mammoth's page break markers)
     const hrParts = html.split(/<hr\b[^>]*>/i).filter(Boolean);
     if (hrParts.length > 1) {
