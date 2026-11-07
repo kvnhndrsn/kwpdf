@@ -312,11 +312,16 @@ async function processFiles(files) {
                 const arrayBuffer = file._cachedBuffer || await file.arrayBuffer();
                 const type = getFileType(file.name);
 
+                // Key documents by their folder-relative path, not the bare
+                // name: A/drawing.pdf and B/drawing.pdf are different drawings
+                // and must not share measurement state.
+                const docPath = (file as any).relativePath || file.name;
+
                 if (type === 'pdf') {
-                    await extractPdfText(arrayBuffer, file.name, url, file);
+                    await extractPdfText(arrayBuffer, docPath, url, file);
                     success = !!state.docTextCache[url];
                 } else if (type === 'docx' || type === 'doc') {
-                    await extractDocText(arrayBuffer, file.name, url, file);
+                    await extractDocText(arrayBuffer, docPath, url, file);
                     success = !!state.docContentCache[url];
                 }
             } catch (err) {
