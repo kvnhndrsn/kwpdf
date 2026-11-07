@@ -1,4 +1,4 @@
-import { state } from './state';
+import { state, dropCachedDocument } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { processTextContentAsync } from './pdf-search';
@@ -94,6 +94,8 @@ export function evictCaches() {
         const sizeOk = totalSize <= state.MAX_CACHE_SIZE_TOTAL;
         if (countOk && sizeOk) break;
 
+        // Same accounting as dropCachedDocument(), but against a local running
+        // total so eviction stays O(n) instead of re-reading state each step.
         if (cacheType === 'pdf' && key in state.docTextCache) {
             delete state.docTextCache[key];
             pdfCount--;
@@ -174,6 +176,9 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             _lastAccess: Date.now(),
             _size: estimatePagesSize(pageTextData) + fileName.length
         };
+        // A rescan of the same URL replaces the entry; drop the old one first
+        // or its size stays counted forever.
+        dropCachedDocument(id);
         state.docTextCache[id] = pdfCacheEntry;
         state.totalCacheSize += pdfCacheEntry._size;
         evictCaches();
@@ -248,6 +253,7 @@ export async function extractDocText(arrayBuffer, fileName, id, file) {
             _lastAccess: Date.now(),
             _size: estimateTextEntrySize(htmlContent, plainText) + fileName.length
         };
+        dropCachedDocument(id);
         state.docContentCache[id] = docxCacheEntry;
         state.totalCacheSize += docxCacheEntry._size;
         evictCaches();
@@ -368,16 +374,7 @@ async function processFiles(files) {
                     // Drop the failed entry from every cache too: a placeholder
                     // card or a dead-URL text entry would otherwise stay in the
                     // tree and in the running cache total for good.
-                    const textEntry = state.docTextCache[url];
-                    if (textEntry) {
-                        state.totalCacheSize -= textEntry._size || 0;
-                        delete state.docTextCache[url];
-                    }
-                    const contentEntry = state.docContentCache[url];
-                    if (contentEntry) {
-                        state.totalCacheSize -= contentEntry._size || 0;
-                        delete state.docContentCache[url];
-                    }
+                    dropCachedDocument(url);
                     delete state.docDataCache[url];
                     failedCount++;
                 }

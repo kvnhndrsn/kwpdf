@@ -1,6 +1,61 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getFileType, getFileIcon, evictCaches, isLegacyDocFile, LEGACY_DOC_MESSAGE } from '../file-handler';
-import { state } from '../state';
+import { state, dropCachedDocument } from '../state';
+
+describe('dropCachedDocument', () => {
+    let saved;
+
+    beforeEach(() => {
+        saved = {
+            docTextCache: state.docTextCache,
+            docContentCache: state.docContentCache,
+            totalCacheSize: state.totalCacheSize,
+        };
+        state.docTextCache = {};
+        state.docContentCache = {};
+        state.totalCacheSize = 0;
+    });
+
+    afterEach(() => {
+        state.docTextCache = saved.docTextCache;
+        state.docContentCache = saved.docContentCache;
+        state.totalCacheSize = saved.totalCacheSize;
+    });
+
+    it('subtracts a text entry size exactly once', () => {
+        state.docTextCache.u1 = { _size: 100 };
+        state.totalCacheSize = 100;
+
+        expect(dropCachedDocument('u1')).toBe(true);
+        expect(state.docTextCache.u1).toBeUndefined();
+        expect(state.totalCacheSize).toBe(0);
+
+        // A second drop must not subtract the same entry again.
+        expect(dropCachedDocument('u1')).toBe(false);
+        expect(state.totalCacheSize).toBe(0);
+    });
+
+    it('drops a docx entry and ignores unknown urls', () => {
+        state.docContentCache.u2 = { _size: 250 };
+        state.totalCacheSize = 250;
+
+        expect(dropCachedDocument('u2')).toBe(true);
+        expect(state.docContentCache.u2).toBeUndefined();
+        expect(state.totalCacheSize).toBe(0);
+
+        expect(dropCachedDocument('missing')).toBe(false);
+        expect(state.totalCacheSize).toBe(0);
+    });
+
+    it('treats a missing _size as zero instead of corrupting the total', () => {
+        state.docTextCache.u3 = {};
+        state.totalCacheSize = 40;
+
+        dropCachedDocument('u3');
+        expect(state.totalCacheSize).toBe(40);
+        expect(state.docTextCache.u3).toBeUndefined();
+    });
+});
 
 describe('getFileType', () => {
     it('identifies PDF files', () => {

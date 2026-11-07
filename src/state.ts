@@ -170,6 +170,33 @@ export function resetDocumentState(): void {
 }
 
 /**
+ * Drop a document's cached text/content and subtract `_size` exactly once.
+ * Deleting an entry without accounting for it leaked the budget, so the app
+ * evicted live documents while believing the cache was full; every deletion of
+ * a sized entry goes through here so the two cannot drift apart again.
+ * Returns true when something was actually removed.
+ */
+export function dropCachedDocument(url: string): boolean {
+    let removed = false;
+
+    const textEntry = state.docTextCache[url];
+    if (textEntry) {
+        state.totalCacheSize -= textEntry._size || 0;
+        delete state.docTextCache[url];
+        removed = true;
+    }
+
+    const contentEntry = state.docContentCache[url];
+    if (contentEntry) {
+        state.totalCacheSize -= contentEntry._size || 0;
+        delete state.docContentCache[url];
+        removed = true;
+    }
+
+    return removed;
+}
+
+/**
  * Reset every indexed document: the text/content caches, the object URLs, the
  * running totals and the global-search results, then the open document itself.
  * Callers are responsible for revoking object URLs and releasing measurements

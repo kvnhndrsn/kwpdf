@@ -1,4 +1,4 @@
-import { state, beginDocGeneration, beginSearch, resetLibraryState } from './state';
+import { state, beginDocGeneration, beginSearch, resetLibraryState, dropCachedDocument } from './state';
 import * as dom from './dom';
 import { fn } from './cross';
 import * as ocr from './ocr';
@@ -90,16 +90,7 @@ export function clearAllResults() {
     if (state.objectUrls) {
         state.objectUrls.forEach(url => {
             URL.revokeObjectURL(url);
-            const pdfEntry = state.docTextCache[url];
-            if (pdfEntry) {
-                state.totalCacheSize -= pdfEntry._size;
-                delete state.docTextCache[url];
-            }
-            const docxEntry = state.docContentCache[url];
-            if (docxEntry) {
-                state.totalCacheSize -= docxEntry._size;
-                delete state.docContentCache[url];
-            }
+            dropCachedDocument(url);
         });
     }
     state.objectUrls = [];

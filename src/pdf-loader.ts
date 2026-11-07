@@ -1,4 +1,4 @@
-import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState } from './state';
+import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState, dropCachedDocument } from './state';
 import * as dom from './dom';
 import { fn, pdfjsLib, basePath } from './cross';
 import { evictCaches } from './file-handler';
@@ -108,8 +108,7 @@ function loadPDF(fileUrl, keyword = '') {
             if (cached && cached.pages && cached.pages.length > 0 && !cached.pages[0]?.viewport?.transform) {
                 // Cache written by an older/other extraction path (no viewport
                 // transform → wrong coords for rotated/offset-box pages). Rebuild.
-                state.totalCacheSize -= cached._size || 0;
-                delete state.docTextCache[fileUrl];
+                dropCachedDocument(fileUrl);
                 cached = null;
             }
             if (!cached) {
@@ -180,6 +179,7 @@ function loadPDF(fileUrl, keyword = '') {
                     _lastAccess: Date.now(),
                     _size: estimatePagesSize(pageTextData) + fileName.length
                 };
+                dropCachedDocument(fileUrl);
                 state.docTextCache[fileUrl] = cached;
                 state.totalCacheSize += cached._size;
                 evictCaches();
