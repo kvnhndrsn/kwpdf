@@ -17,6 +17,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # Type errors and failing tests used to deploy straight to Pages.
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run build
       - uses: peaceiris/actions-gh-pages@v4
         with:
