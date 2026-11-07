@@ -2,6 +2,7 @@ import { state } from './state';
 import * as dom from './dom';
 import { fn, KEYWORDS } from './cross';
 import { getFileIcon, getFileType } from './file-handler';
+import { keywordAt } from './keyword-index';
 
 let _loadDocument, _cycleSearch, _cycleDocSearch, _cycleAllKeywords, _cycleAllDocKeywords, _closeMobileSidebar;
 
@@ -410,15 +411,13 @@ export function updateSidebarBadge() {
     let keywordTotal = 0;
 
     if (state.allKeywordMode && state.currentMatchIndex >= 0 && results.length > 0) {
-        const idx = state.currentMatchIndex;
-        const currentResult = results[idx];
-        if (currentResult && currentResult.keyword) {
-            currentKeyword = currentResult.keyword;
-            keywordTotal = results.filter(r => r.keyword === currentKeyword).length;
-            keywordLocalIndex = 0;
-            for (let i = 0; i <= idx; i++) {
-                if (results[i].keyword === currentKeyword) keywordLocalIndex++;
-            }
+        // Counted once per results array and binary-searched, instead of
+        // filtering and prefix-scanning on every Next/Prev.
+        const at = keywordAt(results, state.currentMatchIndex);
+        if (at.keyword) {
+            currentKeyword = at.keyword;
+            keywordTotal = at.total;
+            keywordLocalIndex = at.localIndex;
         }
     }
 
@@ -499,15 +498,11 @@ export function updateKeywordGrid(url) {
     let akwKeywordTotal = 0;
     const akwResults = state.currentDocType === 'pdf' ? state.searchResults : state.docSearchResults;
     if (state.allKeywordMode && state.currentMatchIndex >= 0 && akwResults.length > 0) {
-        const idx = state.currentMatchIndex;
-        const cr = akwResults[idx];
-        if (cr && cr.keyword) {
-            akwCurrentKeyword = cr.keyword;
-            akwKeywordTotal = akwResults.filter(r => r.keyword === akwCurrentKeyword).length;
-            akwKeywordLocalIndex = 0;
-            for (let i = 0; i <= idx; i++) {
-                if (akwResults[i].keyword === akwCurrentKeyword) akwKeywordLocalIndex++;
-            }
+        const at = keywordAt(akwResults, state.currentMatchIndex);
+        if (at.keyword) {
+            akwCurrentKeyword = at.keyword;
+            akwKeywordTotal = at.total;
+            akwKeywordLocalIndex = at.localIndex;
         }
     }
 
@@ -563,17 +558,27 @@ export function updateKeywordGrid(url) {
 export function updateProgressMainThread() {
     state.processed++;
     dom.progressBar.style.width = `${Math.round((state.processed / state.totalFiles) * 100)}%`;
-    if (state.processed === state.totalFiles) {
-        renderResultsArea();
-        if (state.globalSearchQuery) {
-            fn.performGlobalSearch(state.globalSearchQuery);
-        } else {
-            dom.statusBar.textContent = state.totalMatchesFound === 0
-                ? 'No matches found'
-                : `${state.totalMatchesFound} matches across ${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''}`;
-        }
-        if (state.currentDocUrl) {
-            updateKeywordGrid(state.currentDocUrl);
-        }
+    finishResultsIfComplete();
+}
+
+/**
+ * Publish the final state once every file of the scan has been accounted for.
+ * Split out of updateProgressMainThread() because a streamed archive can shrink
+ * its own denominator (skipped entries) after the last file was processed, and
+ * that must not leave the scan stuck without a summary.
+ */
+export function finishResultsIfComplete(): void {
+    if (state.totalFiles === 0 || state.processed < state.totalFiles) return;
+
+    renderResultsArea();
+    if (state.globalSearchQuery) {
+        fn.performGlobalSearch(state.globalSearchQuery);
+    } else {
+        dom.statusBar.textContent = state.totalMatchesFound === 0
+            ? 'No matches found'
+            : `${state.totalMatchesFound} matches across ${state.totalDocsFound} document${state.totalDocsFound !== 1 ? 's' : ''}`;
+    }
+    if (state.currentDocUrl) {
+        updateKeywordGrid(state.currentDocUrl);
     }
 }

@@ -73,6 +73,7 @@ register('updateStats', rendering.updateStats);
 register('updateSidebarBadge', rendering.updateSidebarBadge);
 register('updateKeywordGrid', rendering.updateKeywordGrid);
 register('updateProgressMainThread', rendering.updateProgressMainThread);
+register('finishResultsIfComplete', rendering.finishResultsIfComplete);
 
 register('clearSearch', ui.clearSearch);
 register('showSearchOverlay', ui.showSearchOverlay);

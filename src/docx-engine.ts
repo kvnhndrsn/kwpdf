@@ -27,6 +27,23 @@ export function clearDocQueryCache() {
 // re-render can restore just those instead of re-parsing every page.
 const docHighlightedPages = new Set<number>();
 
+// The marks built for one results array, indexed by match index, plus the one
+// currently wearing `current`. Moving to another match only has to touch two
+// of them; rebuilding every page that carries a mark re-parsed the whole
+// document on each Next/Prev.
+interface DocHighlightState {
+    results: any[] | null;
+    marks: Array<HTMLElement | undefined>;
+    currentMark: HTMLElement | null;
+}
+
+let docHighlightState: DocHighlightState = { results: null, marks: [], currentMark: null };
+
+function resetDocHighlights() {
+    docHighlightState = { results: null, marks: [], currentMark: null };
+    docHighlightedPages.clear();
+}
+
 // ── helpers ──
 
 function splitHtmlIntoPages(html, targetPerPage = 3000) {
@@ -170,7 +187,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
 
     state.currentDocUrl = fileUrl;
     docQueryCache.clear();
-    docHighlightedPages.clear();
+    resetDocHighlights();
     state.currentDocType = cachedInfo?.type || getDocTypeFromUrl(fileUrl);
 
     // Release the previous PDF: keeping it alive would let in-flight render
@@ -252,7 +269,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
 
 function renderDocContent(html, plainText) {
     dom.viewer.innerHTML = '';
-    docHighlightedPages.clear();
+    resetDocHighlights();
 
     if (!html) {
         dom.viewer.innerHTML = '<div style="padding:20px;">No content to display</div>';
@@ -337,7 +354,8 @@ export function cycleAllDocKeywords() {
     dom.matchTotal.textContent = String(allResults.length);
     (dom.matchInput as HTMLInputElement).max = String(allResults.length);
     (dom.matchInput as HTMLInputElement).value = String(state.docCurrentMatchIndex + 1);
-    renderDocHighlights();
+    // goToDocMatch() renders the highlights; doing it here as well re-parsed
+    // every marked page twice per step.
     state.emit('badge-changed');
     goToDocMatch(state.docCurrentMatchIndex);
 }
@@ -358,7 +376,6 @@ export function performDocSearch(query) {
         dom.matchTotal.textContent = String(results.length);
         (dom.matchInput as HTMLInputElement).max = String(results.length);
         (dom.matchInput as HTMLInputElement).value = '1';
-        renderDocHighlights();
         state.emit('badge-changed');
         goToDocMatch(0);
     } else {
@@ -402,7 +419,8 @@ export function cycleDocSearch(query) {
     dom.matchTotal.textContent = String(results.length);
     (dom.matchInput as HTMLInputElement).max = String(results.length);
     (dom.matchInput as HTMLInputElement).value = String(state.docCurrentMatchIndex + 1);
-    renderDocHighlights();
+    // goToDocMatch() renders the highlights; doing it here as well re-parsed
+    // every marked page twice per step.
     state.emit('badge-changed');
     goToDocMatch(state.docCurrentMatchIndex);
 }
@@ -412,6 +430,26 @@ export function renderDocHighlights() {
     if (!wrapper || !state._docPageHtmls) return;
 
     const pageHtmls = state._docPageHtmls;
+    const results = state.docSearchResults;
+
+    // Same result set as last time, so the marks are already in the DOM: moving
+    // to another match is a class toggle on two elements. A mark that is no
+    // longer connected means its page was re-rendered elsewhere, and the page
+    // markup has to be rebuilt below.
+    if (docHighlightState.results === results) {
+        const next = docHighlightState.marks[state.docCurrentMatchIndex];
+        if (!next || next.isConnected) {
+            if (docHighlightState.currentMark && docHighlightState.currentMark !== next) {
+                docHighlightState.currentMark.classList.remove('current');
+            }
+            if (next) {
+                next.classList.add('current');
+                next.scrollIntoView({ behavior: state.smoothScrollEnabled ? 'smooth' : 'auto', block: 'center' });
+            }
+            docHighlightState.currentMark = next || null;
+            return;
+        }
+    }
 
     // Restore only the pages that actually carry highlight markup. Rewriting
     // every page's innerHTML on each match step re-parses the whole document
@@ -424,15 +462,16 @@ export function renderDocHighlights() {
         styleTables(pageEl);
     }
     docHighlightedPages.clear();
+    docHighlightState = { results, marks: [], currentMark: null };
 
-    if (!state.docSearchResults.length) return;
+    if (!results.length) return;
 
-    const currentResult = state.docSearchResults[state.docCurrentMatchIndex];
+    const currentResult = results[state.docCurrentMatchIndex];
     if (!currentResult) return;
 
     // Group results by page
     const resultsByPage = {};
-    state.docSearchResults.forEach((r, idx) => {
+    results.forEach((r, idx) => {
         const p = r.page || 1;
         if (!resultsByPage[p]) resultsByPage[p] = [];
         resultsByPage[p].push({ ...r, matchIndex: idx });
@@ -487,7 +526,8 @@ export function renderDocHighlights() {
                         .replace(/&/g, '&amp;')
                         .replace(/</g, '&lt;')
                         .replace(/>/g, '&gt;');
-                    return `<mark class="doc-highlight${isCurrent ? ' current' : ''}">${safe}</mark>`;
+                    const mi = matchingResult ? ` data-mi="${matchingResult.matchIndex}"` : '';
+                    return `<mark class="doc-highlight${isCurrent ? ' current' : ''}"${mi}>${safe}</mark>`;
                 });
                 textNode.parentNode.replaceChild(span, textNode);
                 replaced = true;
@@ -496,7 +536,16 @@ export function renderDocHighlights() {
         if (replaced) docHighlightedPages.add(pageNum);
     }
 
-    const currentMark = document.querySelector('.doc-highlight.current');
+    // Index the marks by match so the next navigation is a class toggle.
+    const marks: Array<HTMLElement | undefined> = new Array(results.length);
+    wrapper.querySelectorAll<HTMLElement>('mark.doc-highlight[data-mi]').forEach(el => {
+        const mi = Number(el.dataset.mi);
+        if (Number.isInteger(mi) && mi >= 0 && mi < marks.length) marks[mi] = el;
+    });
+
+    const currentMark = document.querySelector<HTMLElement>('.doc-highlight.current');
+    docHighlightState = { results, marks, currentMark };
+
     if (currentMark) {
         currentMark.scrollIntoView({ behavior: state.smoothScrollEnabled ? 'smooth' : 'auto', block: 'center' });
     }
