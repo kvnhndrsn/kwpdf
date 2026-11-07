@@ -2,6 +2,7 @@ import { state, beginDocGeneration, beginSearch, resetLibraryState, dropCachedDo
 import * as dom from './dom';
 import { fn } from './cross';
 import * as measure from './measure';
+import * as burnSave from './measure-burn-save';
 import { getFileType, isScanRunning, openFolderFiles } from './file-handler';
 import { isOcrRunning } from './ocr';
 import { clearTextCache } from './text-store';
@@ -688,6 +689,9 @@ export function updateToolbarState() {
     (dom.measureAreaBtn as HTMLButtonElement).disabled = !hasDoc;
     (dom.clearMeasureBtn as HTMLButtonElement).disabled = !document.querySelector('.measure-line');
     (dom.scaleInput as HTMLInputElement).disabled = !hasDoc;
+    // A PDF to write into, at least one measurement, and no save in flight.
+    (dom.savePdfBtn as HTMLButtonElement).disabled =
+        !hasPdf || burnSave.isSavingPdf() || measure.getCurrentDocMeasurements().length === 0;
 }
 
 export function goToMatch(index) {
@@ -957,6 +961,16 @@ export function setupEventListeners() {
         measure.clearMeasurementsForCurrentDoc();
         updateMeasureUI();
     });
+    dom.savePdfBtn?.addEventListener('click', async () => {
+        // The save sets its busy flag synchronously, so this disables the
+        // button before the first await and re-enables it once the write is done.
+        const pending = burnSave.savePdfWithMeasurements();
+        updateToolbarState();
+        await pending;
+        updateToolbarState();
+    });
+    // Measurements are also deleted by clicking their label inside measure.ts.
+    state.on('measurements-changed', updateToolbarState);
 
     dom.viewerScroll.addEventListener(
         'touchstart',

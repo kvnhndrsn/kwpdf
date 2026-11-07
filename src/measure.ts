@@ -1,5 +1,6 @@
 import { state } from './state';
 import * as dom from './dom';
+import { MEASURE_STYLE } from './measure-style';
 
 // ── state ──
 
@@ -55,6 +56,9 @@ function saveMeasurements() {
     } catch (e) {
         /* quota exceeded, ignore */
     }
+    // The toolbar's save button follows the measurement list, and labels are
+    // also deleted from inside this module, so announce every mutation.
+    state.emit('measurements-changed');
 }
 
 function loadScale() {
@@ -361,6 +365,17 @@ export function deleteMeasurement(id) {
 /** @param {string} url */
 export function getDocMeasurements(url) {
     return measurementsByDoc[url] || [];
+}
+
+/** Storage key of the open document: its folder-relative path, else its URL. */
+export function getCurrentDocKey() {
+    return getDocKey();
+}
+
+/** Measurements belonging to the open document (empty when it has none). */
+export function getCurrentDocMeasurements() {
+    const key = getDocKey();
+    return key ? measurementsByDoc[key] || [] : [];
 }
 
 // ── click handling ──
@@ -770,8 +785,21 @@ function createLabel(x, y, color, text, measId) {
     return lbl;
 }
 
-const FINAL_COLOR = 'rgba(255, 60, 60, 0.9)';
-const FINAL_LINEW = 1.5;
+/**
+ * Committed-measurement styling, built from the numbers the PDF burn-in uses
+ * (measure-style.ts) so an exported drawing matches what was on screen.
+ */
+const FINAL_COLOR =
+    'rgba(' +
+    Math.round(MEASURE_STYLE.red * 255) +
+    ', ' +
+    Math.round(MEASURE_STYLE.green * 255) +
+    ', ' +
+    Math.round(MEASURE_STYLE.blue * 255) +
+    ', ' +
+    MEASURE_STYLE.opacity +
+    ')';
+const FINAL_LINEW = MEASURE_STYLE.lineWidth;
 
 /** @param {number} x @param {number} y @param {number} tickLen @param {number} tickW @param {number} deg @param {string} color @param {string} className @param {string} [measId] */
 function createTick(x, y, tickLen, tickW, deg, color, className, measId) {

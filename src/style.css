@@ -736,7 +736,7 @@ input, select, button, textarea {
     padding-right: 12px;
 }
 
-#measureDistBtn, #measurePerimBtn, #measureAreaBtn {
+#measureDistBtn, #measurePerimBtn, #measureAreaBtn, #savePdfBtn {
     min-width: 34px;
     padding: 5px 12px;
 }
