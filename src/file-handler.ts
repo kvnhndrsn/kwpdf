@@ -26,6 +26,18 @@ export function isPasswordException(err) {
 let passwordSkipped = 0;
 
 /**
+ * Scans in flight. A counter rather than a flag: processing an archive calls
+ * processFiles() again for a single-entry archive, so the inner run finishes
+ * before the outer one does.
+ */
+let runningScans = 0;
+
+/** True while a multi-file scan or a rescan is running (used to warn on unload). */
+export function isScanRunning(): boolean {
+    return runningScans > 0;
+}
+
+/**
  * Mammoth only reads OOXML. Sniffing the header catches the legacy format even
  * when it arrives as `report.doc` from a folder drop, before Mammoth is asked
  * to parse it and returns something generic.
@@ -519,6 +531,7 @@ async function processFiles(source) {
     // rebuild per file is quadratic, and each file already renders its own
     // card. endResultsBatch() flushes the final state.
     fn.beginResultsBatch();
+    runningScans++;
     try {
         for await (const chunk of chunksOf(batch.chunks)) {
             // Entries the extractor could not produce never reach the loop, so
@@ -539,6 +552,7 @@ async function processFiles(source) {
             }
         }
     } finally {
+        runningScans--;
         fn.endResultsBatch();
         batch.close?.();
     }

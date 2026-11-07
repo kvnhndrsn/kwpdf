@@ -42,6 +42,17 @@ export function initOcr() {
 /** Stop in-flight OCR and drop every per-file result. Used when all documents
  *  are cleared, so workers cannot keep recognising pages behind revoked object
  *  URLs and results keyed by them cannot leak into a later session. */
+/**
+ * True while any file's OCR run is in flight. Derived from the per-file state
+ * rather than tracked separately, so a run that errors out cannot leave it set.
+ */
+export function isOcrRunning(): boolean {
+    for (const entry of ocrFileState.values()) {
+        if (entry?.status === 'processing') return true;
+    }
+    return false;
+}
+
 export function resetOcrState() {
     ocrResetEpoch++;
 

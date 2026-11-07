@@ -93,6 +93,32 @@ test('attributes DOCX matches to pages and navigates them', async ({ page }) => 
     expect(await currentDocMatchPage(page)).toContain('Section 14');
 });
 
+test('warns before unloading while a scan is still running', async ({ page }) => {
+    // A synthetic event: the browser's own prompt only appears on a real
+    // navigation, but the handler's decision is observable this way.
+    const prevented = () =>
+        page.evaluate(() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+
+    expect(await prevented()).toBe(false);
+
+    // Two files take the batch path, and a 120-page PDF keeps it running long
+    // enough to be observed; a single file would open in the viewer instead.
+    await dropFiles(page, ['large.pdf', 'one-kw.pdf']);
+    let warned = false;
+    for (let i = 0; i < 60 && !warned; i++) {
+        warned = await prevented();
+        if (!warned) await page.waitForTimeout(100);
+    }
+    expect(warned).toBe(true);
+
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+    await expect.poll(prevented, { timeout: 15_000 }).toBe(false);
+});
+
 test('skips a file that is already loaded', async ({ page }) => {
     const when = 1_700_000_000_000;
     const rows = page.locator('.tree-file-item');

@@ -207,3 +207,12 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - The check runs per file as the batch advances rather than as a pre-filter, because a single drop can contain two copies of the same file and the first one only registers its key when its card is rendered.
 - Ordering detail: the status line is set *after* `emit('stats-changed')` in the single-file path, because the stats handler rewrites it (the first e2e attempt read "8 matches across 1 document" instead).
 - Verified by a new Playwright case: drop `one-kw.pdf` twice with the same `lastModified` → still one tree row, count unchanged, "Already loaded" in the status bar. Plus eslint 0, format:check 0, typecheck 0, 257 unit tests, 4 e2e tests.
+
+## E6 — warn before closing during a scan
+
+- `beforeunload` only revoked object URLs, which is a no-op while the page is being torn down, so closing the tab mid-scan lost the work silently. It now calls `preventDefault()` and sets `returnValue` while either a multi-file scan/rescan (`isScanRunning()`) or an OCR run (`isOcrRunning()`) is in flight.
+- `isScanRunning()` is a counter rather than a boolean because a single-entry archive calls `processFiles()` again from inside the outer batch, so the inner run finishes first. It is incremented around the batch loop and around `rescanAllDocuments`, so rescanning a big library is protected too.
+- `isOcrRunning()` is derived from `ocrFileState` (any entry still `processing`) instead of a separate flag, so a run that errors out or is reset cannot leave the guard stuck on.
+- The browser shows its own generic message; `returnValue` is only there for engines that still require it.
+- Verified by a Playwright case: a dispatched `beforeunload` is not prevented when idle, is prevented while `large.pdf` + `one-kw.pdf` are being scanned (two files, so the batch path runs), and is not prevented again once the scan finishes. Plus eslint 0, format:check 0, typecheck 0, 257 unit tests, 5 e2e tests.
+- Not verified: the real browser prompt on an actual tab close (it needs a human or a headed run; a synthetic event only exercises the handler's decision), and the OCR half of the guard end-to-end, since driving Tesseract in the test browser is slow and flaky.

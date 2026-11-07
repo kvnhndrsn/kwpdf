@@ -2,6 +2,8 @@ import { state, beginDocGeneration, beginSearch, resetLibraryState, dropCachedDo
 import * as dom from './dom';
 import { fn } from './cross';
 import * as measure from './measure';
+import { isScanRunning } from './file-handler';
+import { isOcrRunning } from './ocr';
 import * as keywords from './keywords';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from './search-controller';
 import type { RenderQuality, SearchResult } from './types';
@@ -1170,10 +1172,18 @@ export function updateMeasureUI() {
     updateToolbarState();
 }
 
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', (e) => {
     if (state.objectUrls) {
         state.objectUrls.forEach((url) => URL.revokeObjectURL(url));
         state.objectUrls = [];
+    }
+
+    // Revoking URLs does nothing useful while the page is being torn down; the
+    // warning is what protects a scan that is still running from a stray close.
+    if (isScanRunning() || isOcrRunning()) {
+        e.preventDefault();
+        // Older browsers only show the prompt when returnValue is set.
+        e.returnValue = '';
     }
 });
 
