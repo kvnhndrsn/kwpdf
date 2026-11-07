@@ -28,12 +28,17 @@ Serve **`dist/`**, not the repository root. The root `index.html` is a source fi
 that registers `service_worker.js` with an unresolved cache version, so serving it
 installs a service worker that caches broken responses.
 
+### Supported files
+
+PDF, DOCX, and ZIP archives (folders inside an archive are walked too). Legacy
+`.doc` is rejected — see the caveat below.
+
 ### Scripts
 
 | Command | What it does |
 |---|---|
 | `npm run build` | Bundles into `dist/` (bundle, service worker, pdf.js worker, CMaps, standard fonts) |
-| `npm run typecheck` | `tsc --noEmit` |
+| `npm run typecheck` | `tsc --noEmit`, then the stricter `tsconfig.strict.json` project |
 | `npm test` | Vitest, single run |
 | `npm run bench` | Vitest benchmarks (`src/__tests__/perf.bench.js`) |
 
@@ -52,6 +57,10 @@ after a rebuild.
   Word files as `.docx` first. Such files are rejected by their OLE2 header (or
   `.doc` extension) with that message before they reach the tree, instead of
   failing inside the parser.
+- **Password-protected PDFs.** Opening one on its own asks for the password and
+  says explicitly when it is wrong; cancelling leaves the document unopened. A
+  folder or ZIP scan has nobody to ask, so encrypted files are reported as
+  skipped (password-protected) instead of as failures. OCR does not prompt.
 - **OCR is self-hosted.** The Tesseract runtime, its wasm core and the eng
   language data ship in `dist/tesseract/` (copied from the pinned
   `tesseract.js`, `tesseract.js-core` and `@tesseract.js-data/eng` packages), so

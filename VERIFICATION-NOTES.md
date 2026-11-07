@@ -168,3 +168,13 @@ Encrypted PDFs used to reject the load with no way to supply a password (`getDoc
 - `index.html` now guards the registration with `/* BUILD_TARGET */ false`; `build.js` rewrites that marker to `true` while writing `dist/index.html` and throws if the marker is missing. The source page can no longer install a service worker, and the built page is unchanged.
 - Verified: `index.html` contains the marker as `false`, `dist/index.html` as `true`; `dist/index.html` points at `bundle.js` (no `dist/` prefix); typecheck 0, 257 tests, build 0. With the repo root served (`python3 -m http.server 8896 --directory .`), `index.html` returns 200 while `style.css` is 404 and `service_worker.js` still carries `__CACHE_VERSION__` — the exact broken setup the README warns about, now harmless.
 - Browser: opening `http://127.0.0.1:8896/index.html` (repo root served) loads the app but registers nothing — `navigator.serviceWorker.getRegistrations()` is empty, the page is not controlled by a worker, and `caches.keys()` is empty; the console stays silent instead of logging a registration. The dist-served page still registers (`kwpdf-6d66a00f`).
+
+## D5 — README accuracy
+
+Most of what D5 asks for was already in `README.md` from earlier items: the scripts table (including `bench`), the "`npm run build` deletes `dist/` first" note, the keyword-vs-ad-hoc search semantics, the keyword-list failure banner, the self-hosted OCR story and the legacy `.doc` rejection. Three gaps were real and are now fixed:
+
+- The `npm run typecheck` row said `tsc --noEmit`, which stopped being the whole story in C11 (it now also runs the stricter `tsconfig.strict.json` project).
+- There was no statement of which formats are accepted, only scattered mentions in the feature list; a "Supported files" section now says PDF, DOCX and ZIP (including folders inside an archive).
+- The password behaviour added in C10 was undocumented: a new caveat covers the single-file prompt (including a wrong password and cancelling) and the batch/ZIP skip, and notes that OCR does not prompt.
+
+Docs-only change: no build or test run was needed, and none of the claims are new behaviour — each describes something verified in its own item.
