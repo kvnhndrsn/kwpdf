@@ -99,18 +99,36 @@ function processRegexOnPDFCache(pages, keywords) {
     return { counts, totalMatches };
 }
 
+// Must stay in step with runSpacing() in pdf-search.ts: the worker and the
+// main-thread extractor have to produce the same page text, or a scanned
+// document's counts change depending on which path processed it.
+function runSpacing(prevItem, item) {
+    const t = item.transform;
+    const p = prevItem.transform;
+    const fontSize = Math.hypot(t[0], t[1]) || 12;
+    if (Math.abs(t[1]) > Math.abs(t[0])) {
+        // Rotated 90 (+1) or 270 (-1) degrees: the run advances along y.
+        const sign = Math.sign(t[1]) || 1;
+        return {
+            sameLine: Math.abs(t[4] - p[4]) <= fontSize * 0.5,
+            gap: sign * (t[5] - p[5]) - prevItem.width,
+        };
+    }
+    return {
+        sameLine: Math.abs(t[5] - p[5]) <= fontSize * 0.5,
+        gap: t[4] - (p[4] + prevItem.width),
+    };
+}
+
 function processTextContentOnItems(items) {
     let pageText = '';
     const processed = [];
     let prevItem = null;
     for (const item of items) {
         if (prevItem) {
-            const fontSize = Math.abs(item.transform[0]) || 12;
-            const gapX = item.transform[4] - (prevItem.transform[4] + prevItem.width);
-            const gapY = Math.abs(item.transform[5] - prevItem.transform[5]);
-            const sameLine = gapY <= fontSize * 0.5;
+            const { sameLine, gap } = runSpacing(prevItem, item);
             if (sameLine) {
-                if (gapX > 0) {
+                if (gap > 0) {
                     pageText += ' ';
                     processed.push({ text: ' ', transform: item.transform, width: 0, height: item.height });
                 }
