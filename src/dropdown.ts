@@ -1,3 +1,5 @@
+let _menuSeq = 0;
+
 export class CustomDropdown {
     private select: HTMLSelectElement;
     private wrapper!: HTMLDivElement;
@@ -29,10 +31,13 @@ export class CustomDropdown {
         this.trigger.className = 'custom-dropdown-trigger';
         this.trigger.type = 'button';
         this.trigger.setAttribute('aria-haspopup', 'listbox');
+        this.trigger.setAttribute('aria-expanded', 'false');
 
         this.menu = document.createElement('div');
         this.menu.className = 'custom-dropdown-menu';
         this.menu.setAttribute('role', 'listbox');
+        this.menu.id = `custom-dropdown-menu-${++_menuSeq}`;
+        this.trigger.setAttribute('aria-controls', this.menu.id);
 
         this.select.style.display = 'none';
         this.select.parentNode!.insertBefore(this.wrapper, this.select);
@@ -60,6 +65,16 @@ export class CustomDropdown {
 
         this._onKeyDown = this._onKeyDown.bind(this);
         this.menu.addEventListener('keydown', this._onKeyDown);
+
+        // The trigger is a button, so Enter/Space already open it through the
+        // click handler; arrow keys are what a listbox trigger is expected to
+        // answer to as well.
+        this.trigger.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            if (this.select.disabled) return;
+            this.open(e.key === 'ArrowUp');
+        });
 
         this._onDocumentClick = (e: MouseEvent) => {
             if (!this.wrapper.contains(e.target as Node)) {
@@ -155,11 +170,14 @@ export class CustomDropdown {
             const item = document.createElement('div');
             item.className = 'custom-dropdown-item';
             item.setAttribute('role', 'option');
+            // Focused with .focus() from the keyboard handler, never tabbed to:
+            // the listbox is one stop in the tab order, its trigger.
+            item.tabIndex = -1;
             item.dataset.value = opt.value;
             item.textContent = opt.textContent;
+            item.setAttribute('aria-selected', String(opt.selected || i === this.select.selectedIndex));
             if (opt.selected || i === this.select.selectedIndex) {
                 item.classList.add('selected');
-                item.setAttribute('aria-selected', 'true');
             }
             if (opt.disabled) {
                 item.classList.add('disabled');
@@ -172,7 +190,7 @@ export class CustomDropdown {
         this._updateDisabled();
     }
 
-    open(): void {
+    open(focusLast = false): void {
         if (this.select.disabled || this.select.options.length === 0) return;
         if (this.menu.classList.contains('open')) return;
 
@@ -199,8 +217,9 @@ export class CustomDropdown {
             this.menu.style.bottom = 'auto';
         }
 
-        const firstItem = this.menu.querySelector<HTMLElement>('.custom-dropdown-item');
-        if (firstItem) firstItem.focus();
+        const items = this.menu.querySelectorAll<HTMLElement>('.custom-dropdown-item');
+        const target = focusLast ? items[items.length - 1] : items[0];
+        if (target) target.focus();
 
         document.addEventListener('click', this._onDocumentClick);
     }
@@ -209,7 +228,7 @@ export class CustomDropdown {
         if (!this.menu.classList.contains('open')) return;
         this.menu.classList.remove('open');
         this.wrapper.classList.remove('open');
-        this.trigger.removeAttribute('aria-expanded');
+        this.trigger.setAttribute('aria-expanded', 'false');
         this.menu.style.position = '';
         this.menu.style.left = '';
         this.menu.style.top = '';

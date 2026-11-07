@@ -374,6 +374,13 @@ input, select, button, textarea {
 .folder.open::before { content: "\2212"; }
 .folder:hover { background: var(--grey-700); }
 
+/* Tree rows are focusable buttons (rendering.ts); show where the focus is. */
+.folder:focus-visible,
+.file:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
 .file {
     display: flex;
     align-items: center;

@@ -93,6 +93,18 @@ test('attributes DOCX matches to pages and navigates them', async ({ page }) => 
     expect(await currentDocMatchPage(page)).toContain('Section 14');
 });
 
+test('opens a document from the results tree with the keyboard', async ({ page }) => {
+    await dropFiles(page, ['one-kw.pdf', 'mixed.pdf']);
+    await expect(page.locator('#statusBar')).toContainText('matches across', { timeout: 60_000 });
+
+    const row = page.locator('.tree-file-item .file', { hasText: 'one-kw.pdf' });
+    await row.focus();
+    await expect(row).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('.file.active')).toContainText('one-kw.pdf', { timeout: 20_000 });
+});
+
 test('warns before unloading while a scan is still running', async ({ page }) => {
     // A synthetic event: the browser's own prompt only appears on a real
     // navigation, but the handler's decision is observable this way.

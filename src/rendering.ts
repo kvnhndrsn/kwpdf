@@ -138,6 +138,24 @@ function buildTreeData() {
     return root;
 }
 
+/**
+ * Make a clickable span reachable from the keyboard.
+ *
+ * Tree rows and their counts are spans, so they were mouse-only: no tab stop,
+ * and .focus() from the tree/arrow code did nothing. Enter and Space now run
+ * the same handler as a click, without a second copy of that logic.
+ */
+function makeActivatable(el: HTMLElement, label?: string): void {
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    if (label) el.setAttribute('aria-label', label);
+    el.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        el.click();
+    });
+}
+
 function renderTree(node, path = '') {
     const ul = document.createElement('ul');
 
@@ -156,12 +174,15 @@ function renderTree(node, path = '') {
         folderIcon.alt = 'folder';
         folderSpan.appendChild(folderIcon);
         folderSpan.appendChild(document.createTextNode(' ' + name));
-        folderSpan.addEventListener('click', function (e) {
+        folderSpan.setAttribute('aria-expanded', 'true');
+        folderSpan.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.classList.toggle('open');
-            const nested = this.nextElementSibling;
-            if (nested && nested.classList.contains('tree-nested')) nested.classList.toggle('expanded');
+            const open = folderSpan.classList.toggle('open');
+            folderSpan.setAttribute('aria-expanded', String(open));
+            const nested = folderSpan.nextElementSibling;
+            if (nested && nested.classList.contains('tree-nested')) nested.classList.toggle('expanded', open);
         });
+        makeActivatable(folderSpan, name);
         li.appendChild(folderSpan);
         const childUl = renderTree(child, path ? path + '/' + name : name);
         childUl.className = 'tree-nested expanded';
@@ -321,6 +342,9 @@ function renderTree(node, path = '') {
                 tryActivate();
             }
         });
+        // The count spans stay mouse-only on purpose: they live inside the row
+        // button, and the row's own activation already cycles the matches.
+        makeActivatable(fileSpan);
         li.appendChild(fileSpan);
         ul.appendChild(li);
     }
