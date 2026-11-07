@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kwpdf-5bc1e163';
+const CACHE_NAME = 'kwpdf-ee31f24e';
 const NETWORK_FIRST = ['/index.html', '/style.css', '/bundle.js'];
 const LOCAL_ASSETS = [
     './bundle.js',
@@ -17,35 +17,47 @@ const LOCAL_ASSETS = [
     // visitor who never uses OCR does not download them.
     './tesseract/tesseract.min.js',
     './tesseract/worker.min.js',
+    // The two runtime workers the app itself starts. Both URLs carry the build
+    // hash (worker-pool.js, ocr.ts), and a cache hit needs an exact URL, so the
+    // precached entry carries the same query — that is what makes a rebuilt
+    // worker script impossible to serve from an older cache.
+    './utils/doc_processor_worker.js?h=ee31f24e',
+    './utils/ocr_worker.js?h=ee31f24e',
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            console.log('[SW] Caching local assets');
-            return Promise.all(
-                LOCAL_ASSETS.map(url =>
-                    cache.add(url).catch(err => {
-                        console.warn('[SW] Failed to cache:', url, err);
-                    })
-                )
-            );
-        }).then(() => self.skipWaiting())
+        caches
+            .open(CACHE_NAME)
+            .then((cache) => {
+                console.log('[SW] Caching local assets');
+                return Promise.all(
+                    LOCAL_ASSETS.map((url) =>
+                        cache.add(url).catch((err) => {
+                            console.warn('[SW] Failed to cache:', url, err);
+                        }),
+                    ),
+                );
+            })
+            .then(() => self.skipWaiting()),
     );
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then(names =>
-            Promise.all(
-                names.map(name => {
-                    if (name !== CACHE_NAME) {
-                        console.log('[SW] Deleting old cache:', name);
-                        return caches.delete(name);
-                    }
-                })
+        caches
+            .keys()
+            .then((names) =>
+                Promise.all(
+                    names.map((name) => {
+                        if (name !== CACHE_NAME) {
+                            console.log('[SW] Deleting old cache:', name);
+                            return caches.delete(name);
+                        }
+                    }),
+                ),
             )
-        ).then(() => self.clients.claim())
+            .then(() => self.clients.claim()),
     );
 });
 
@@ -60,7 +72,7 @@ function isNetworkFirst(url) {
         return false;
     }
     // endsWith, not equality: Pages serves the app from a /<repo>/ sub-path.
-    return NETWORK_FIRST.some(asset => pathname.endsWith(asset));
+    return NETWORK_FIRST.some((asset) => pathname.endsWith(asset));
 }
 
 /**
@@ -82,41 +94,48 @@ function putInCache(request, response) {
     if (!response || !response.ok) return Promise.resolve();
     if (!isCacheable(request)) return Promise.resolve();
     const copy = response.clone();
-    return caches.open(CACHE_NAME)
-        .then(cache => cache.put(request, copy))
-        .catch(err => console.warn('[SW] Failed to cache:', request.url, err));
+    return caches
+        .open(CACHE_NAME)
+        .then((cache) => cache.put(request, copy))
+        .catch((err) => console.warn('[SW] Failed to cache:', request.url, err));
 }
 
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
     if (isNetworkFirst(event.request.url)) {
         event.respondWith(
-            fetch(event.request).then(response => {
-                putInCache(event.request, response);
-                return response;
-            }).catch(() => caches.match(event.request))
+            fetch(event.request)
+                .then((response) => {
+                    putInCache(event.request, response);
+                    return response;
+                })
+                .catch(() => caches.match(event.request)),
         );
         return;
     }
 
     event.respondWith(
-        caches.match(event.request).then(cached => {
+        caches.match(event.request).then((cached) => {
             if (cached) {
-                fetch(event.request).then(response => {
-                    putInCache(event.request, response);
-                }).catch(() => {});
+                fetch(event.request)
+                    .then((response) => {
+                        putInCache(event.request, response);
+                    })
+                    .catch(() => {});
                 return cached;
             }
 
-            return fetch(event.request).then(response => {
-                putInCache(event.request, response);
-                return response;
-            }).catch(() => {
-                if (event.request.destination === 'document') {
-                    return caches.match('./index.html');
-                }
-            });
-        })
+            return fetch(event.request)
+                .then((response) => {
+                    putInCache(event.request, response);
+                    return response;
+                })
+                .catch(() => {
+                    if (event.request.destination === 'document') {
+                        return caches.match('./index.html');
+                    }
+                });
+        }),
     );
 });
