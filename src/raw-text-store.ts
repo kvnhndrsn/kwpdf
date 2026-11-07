@@ -33,6 +33,7 @@ export function getRawTextContent(pageNum: number): any {
     return value;
 }
 
+/** Test-facing: lets the LRU assertions drop an entry without a public map. */
 export function deleteRawTextContent(pageNum: number): void {
     entries.delete(pageNum);
 }
@@ -41,6 +42,7 @@ export function clearRawTextContent(): void {
     entries.clear();
 }
 
+/** Test-facing: lets the LRU cap be asserted without exposing the map. */
 export function rawTextContentSize(): number {
     return entries.size;
 }

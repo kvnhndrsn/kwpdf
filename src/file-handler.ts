@@ -45,6 +45,27 @@ export function getFileType(filename) {
     return null;
 }
 
+/**
+ * Canonical document-type resolution for a document URL.
+ *
+ * pdf-loader.ts and docx-engine.ts each carried a copy of this with slightly
+ * different rules. The cached entry knows its own type, then its file name
+ * (blob URLs carry no extension), then the URL itself.
+ */
+export function getDocTypeFromUrl(url) {
+    if (!url) return null;
+    const dataCached = state.docDataCache[url];
+    if (dataCached?.type) return dataCached.type;
+    const name = dataCached?.name;
+    if (name) {
+        const type = getFileType(name);
+        if (type && type !== 'zip') return type;
+    }
+    if (state.docContentCache[url]?.type) return state.docContentCache[url].type;
+    const fromUrl = getFileType(String(url).split(/[?#]/)[0]);
+    return fromUrl === 'zip' ? null : fromUrl;
+}
+
 export function getFileIcon(filename) {
     const type = getFileType(filename);
     if (type === 'pdf') return '<img src="icons/pdf.svg" width="18" height="18" alt="pdf">';
@@ -897,38 +918,5 @@ export async function rescanAllDocuments() {
     }
 }
 
-export async function rescanWithNewKeywords() {
-    if (!state.pdfDoc || !state.currentDocUrl) return;
-
-    initWorkerPool();
-    state.workerPool.cancelStale(state.docGeneration);
-    const keywords = KEYWORDS || [];
-
-    let fullText = '';
-    for (let p = 1; p <= state.totalPages; p++) {
-        if (state.textPageCache[p] && state.textPageCache[p].text) {
-            fullText += state.textPageCache[p].text;
-        }
-    }
-
-    try {
-        const result = await state.workerPool.runRegexOnText(fullText, 'current-document', keywords, 'pdf', state.currentDocUrl);
-
-        const docCounts = result.counts || {};
-        const totalMatches = result.totalMatches || 0;
-
-        if (state.currentDocUrl && state.docDataCache[state.currentDocUrl]) {
-            state.docDataCache[state.currentDocUrl].counts = docCounts;
-        }
-
-        state.totalMatchesFound = totalMatches;
-        state.emit('stats-changed');
-        fn.precomputeAllSearches();
-        if (state.currentDocUrl) fn.updateKeywordGrid(state.currentDocUrl);
-    } catch (err) {
-        if (err instanceof CancelledTaskError) return;
-        console.error('[Worker] Rescan with new keywords error:', err);
-    }
-}
 
 

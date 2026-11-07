@@ -134,3 +134,12 @@ Encrypted PDFs used to reject the load with no way to supply a password (`getDoc
 - Covered: `keyword-regex`, `highlight-plan`, `canvas-budget`, `cache-size`, `pdf-coords`, `html-text` (all dependency-free, zero errors under the stricter settings).
 - Proof the config is not inert: a temporary `const x: string = null` in `html-text.ts` fails the strict project (`TS2322`), and the file was restored.
 - Still on the loose settings: everything else. Adding `pdf-loader.ts`, `file-handler.ts` and `ocr.ts` to the strict project currently yields 411 errors (measure 175, file-handler 82, pdf-search 59, ocr 52, pdf-loader 35, pdf-highlights 6, state 2), so each of those needs its own batch.
+
+## D1 — dead code and duplicated helpers
+
+- Removed `rescanWithNewKeywords` (`file-handler.ts`, no callers, superseded by `rescanAllDocuments`), `handleZoomChange` (`measure.ts`, no callers), `_findCustomResultAfterScroll` / `_findCustomResultBeforeScroll` (`ui.ts`, no callers) and `fix-errors.sh` (stale one-off with a hard-coded `/home/kevin/11blog/...` path).
+- Kept `deleteRawTextContent` / `rawTextContentSize` in `raw-text-store.ts`: the LRU-cap tests use them as their API, so they now carry a "test-facing" comment instead of being deleted.
+- Type resolution: `getFileType` (`file-handler.ts`) stays the only extension parser, and the copies of `getDocTypeFromUrl` in `pdf-loader.ts` and `docx-engine.ts` (plus `getFileTypeSimple`) are replaced by one exported `getDocTypeFromUrl` in `file-handler.ts`. It differs from the old copies in two ways: it strips `?query`/`#hash` before matching an extension, and it returns `null` for `.zip` (the old URL-suffix checks did not know about `.zip` at all).
+- `processTextContent` (`pdf-search.ts`) is documented as the canonical implementation; `processTextContentOnItems` in `doc_processor_worker.js` cannot import it and now says so, so a change to one is visible from the other.
+- Verified: grep for every removed symbol returns nothing, `npm run typecheck` 0, `npx vitest run` 256 passed / 20 files, `npm run build` 0.
+- Browser smoke after the change: dropping `one-kw.pdf` + `mixed.pdf` scanned both (tree rows with 6 and 9 matches, "15 matches across 2 documents"); the rescan path (switching keyword list + Save & Apply) reran both documents and the counts moved to 6 / 7 with "13 matches across 2 documents". Opening a PDF in the viewer still stalls in the preview tab at "Rendering first page..." for the usual `requestAnimationFrame` reason, so the open path itself was only checked through the scan results.

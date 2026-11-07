@@ -1145,10 +1145,6 @@ export function refreshAllMeasurements() {
     renderAllMeasurements();
 }
 
-export function handleZoomChange() {
-    markCommittedDirty();
-    renderAllMeasurements();
-}
 
 // ── auto scale detection ──
 

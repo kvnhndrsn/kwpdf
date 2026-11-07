@@ -1145,41 +1145,6 @@ export function activateGlobalSearch(navigateToLast?: any, noScroll?: any) {
     }
 }
 
-function _findCustomResultAfterScroll() {
-    const scrollTop = dom.viewerScroll.scrollTop;
-    const viewportCenter = scrollTop + dom.viewerScroll.clientHeight / 2;
-    for (let i = 0; i < customSearchResults.length; i++) {
-        const r = customSearchResults[i];
-        const pageEl = document.getElementById('page-' + r.page);
-        if (!pageEl) continue;
-        const cached = state.textPageCache[r.page];
-        if (!cached || !cached.items) continue;
-        const coords = getTextCoords(cached, r.startIndex, r.endIndex);
-        if (!coords) continue;
-        const resultTop = pageEl.offsetTop + coords.startY * state.currentScale;
-        if (resultTop > viewportCenter + 5) return i;
-    }
-    return -1;
-}
-
-function _findCustomResultBeforeScroll() {
-    const scrollTop = dom.viewerScroll.scrollTop;
-    const viewportCenter = scrollTop + dom.viewerScroll.clientHeight / 2;
-    let bestIdx = -1;
-    for (let i = 0; i < customSearchResults.length; i++) {
-        const r = customSearchResults[i];
-        const pageEl = document.getElementById('page-' + r.page);
-        if (!pageEl) continue;
-        const cached = state.textPageCache[r.page];
-        if (!cached || !cached.items) continue;
-        const coords = getTextCoords(cached, r.startIndex, r.endIndex);
-        if (!coords) continue;
-        const resultTop = pageEl.offsetTop + coords.startY * state.currentScale;
-        if (resultTop < viewportCenter - 5) bestIdx = i;
-    }
-    return bestIdx;
-}
-
 export function cycleGlobalSearch() {
     if (state.currentDocUrl && state.docContentCache[state.currentDocUrl]) {
         fn.findNext();

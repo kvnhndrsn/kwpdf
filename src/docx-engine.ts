@@ -3,7 +3,7 @@ import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
 import { htmlToText } from './html-text';
-import { isLegacyDocFile, LEGACY_DOC_MESSAGE } from './file-handler';
+import { isLegacyDocFile, LEGACY_DOC_MESSAGE, getDocTypeFromUrl } from './file-handler';
 
 state.searchCache = createSearchCache();
 state.docSearchResults = [];
@@ -565,23 +565,4 @@ export function goToDocMatch(index) {
         pageEl.scrollIntoView({ behavior: state.smoothScrollEnabled ? 'smooth' : 'auto', block: 'start' });
     }
     renderDocHighlights();
-}
-
-function getDocTypeFromUrl(url) {
-    const dataCached = state.docDataCache[url];
-    if (dataCached?.type) return dataCached.type;
-    if (dataCached?.name) return getFileTypeSimple(dataCached.name);
-    if (state.docContentCache[url]?.type) return state.docContentCache[url].type;
-    if (url.includes('.pdf')) return 'pdf';
-    if (url.includes('.docx')) return 'docx';
-    if (url.includes('.doc')) return 'doc';
-    return null;
-}
-
-function getFileTypeSimple(filename) {
-    const lower = filename.toLowerCase();
-    if (lower.endsWith('.pdf')) return 'pdf';
-    if (lower.endsWith('.docx')) return 'docx';
-    if (lower.endsWith('.doc')) return 'doc';
-    return null;
 }

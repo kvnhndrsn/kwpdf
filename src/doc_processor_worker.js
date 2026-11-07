@@ -120,6 +120,10 @@ function runSpacing(prevItem, item) {
     };
 }
 
+// Copy of `processTextContent` from src/pdf-search.ts, which is the canonical
+// implementation. This worker cannot import that module, so spacing, hyphen
+// joining and rotated-run rules must be kept identical by hand: a difference
+// here silently changes the text — and the match counts — of scanned pages.
 function processTextContentOnItems(items) {
     let pageText = '';
     const processed = [];

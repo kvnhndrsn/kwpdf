@@ -1,7 +1,7 @@
 import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState, dropCachedDocument } from './state';
 import * as dom from './dom';
 import { fn, pdfjsLib, basePath } from './cross';
-import { evictCaches } from './file-handler';
+import { evictCaches, getDocTypeFromUrl } from './file-handler';
 import { setScale, autoDetectScale } from './measure';
 import { processTextContent, processTextContentAsync } from './pdf-search';
 import { estimatePagesSize } from './cache-size';
@@ -9,22 +9,6 @@ import { requestPassword } from './password-prompt';
 
 /** Pages extracted in parallel during load-time text extraction. */
 const EXTRACT_CONCURRENCY = 8;
-
-function getDocTypeFromUrl(url) {
-    const dataCached = state.docDataCache[url];
-    if (dataCached?.type) return dataCached.type;
-    if (dataCached?.name) {
-        const lower = dataCached.name.toLowerCase();
-        if (lower.endsWith('.pdf')) return 'pdf';
-        if (lower.endsWith('.docx')) return 'docx';
-        if (lower.endsWith('.doc')) return 'doc';
-    }
-    if (state.docContentCache[url]?.type) return state.docContentCache[url].type;
-    if (url.includes('.pdf')) return 'pdf';
-    if (url.includes('.docx')) return 'docx';
-    if (url.includes('.doc')) return 'doc';
-    return null;
-}
 
 // Placeholder entry for a page whose text could not be extracted. Keeps the
 // cached pages array 1:1 with real page numbers so failures never shift the

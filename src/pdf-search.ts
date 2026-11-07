@@ -37,6 +37,15 @@ function runSpacing(prevItem, item) {
     };
 }
 
+/**
+ * Canonical implementation of pdf.js TextContent → page text.
+ *
+ * `doc_processor_worker.js` (`processTextContentOnItems`) carries a copy of
+ * this — the DOCX/OCR path runs in a worker and cannot import this module — and
+ * must be changed in step with it. If the two drift, the same page yields
+ * different text, and therefore different matches, depending on which path
+ * loaded it.
+ */
 export function processTextContent(textContent) {
     let pageText = '';
     const items = [];
