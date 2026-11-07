@@ -1,5 +1,5 @@
-const CACHE_NAME = 'kwpdf-f632aeb3';
-const NETWORK_FIRST = ['./index.html', './style.css', './bundle.js'];
+const CACHE_NAME = 'kwpdf-ca62dd82';
+const NETWORK_FIRST = ['/index.html', '/style.css', '/bundle.js'];
 const LOCAL_ASSETS = [
     './bundle.js',
     './pdf.worker.min.mjs',
@@ -43,8 +43,18 @@ self.addEventListener('activate', event => {
     );
 });
 
+// `NETWORK_FIRST` holds paths, while a request URL is absolute. The previous
+// `url.includes('./index.html')` test could never match "https://host/index.html",
+// so the app shell was served cache-first and updates waited for a cache bump.
 function isNetworkFirst(url) {
-    return NETWORK_FIRST.some(asset => url.includes(asset));
+    let pathname;
+    try {
+        pathname = new URL(url).pathname;
+    } catch (e) {
+        return false;
+    }
+    // endsWith, not equality: Pages serves the app from a /<repo>/ sub-path.
+    return NETWORK_FIRST.some(asset => pathname.endsWith(asset));
 }
 
 /**

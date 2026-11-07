@@ -1,20 +1,52 @@
 // doc_processor_worker.js - Web worker for REGEX MATCHING ONLY
 // Text extraction (PDF.js, Mammoth) stays on main thread
 
+// Trim, drop blank entries and collapse case-insensitive duplicates. Must stay
+// in step with normalizeKeywordList() in keyword-regex.ts: a blank entry would
+// become an empty alternative (`\b()\b`), whose zero-length global match never
+// advances lastIndex and hangs the scan.
+function normalizeKeywordList(keywords) {
+    const seen = new Set();
+    const unique = [];
+    for (const raw of keywords || []) {
+        if (typeof raw !== 'string') continue;
+        const keyword = raw.trim();
+        if (!keyword) continue;
+        const lower = keyword.toLowerCase();
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        unique.push(keyword);
+    }
+    return unique;
+}
+
 // Helper: Create keyword regex from keywords array
 function getKeywordRegex(keywords) {
-    if (!keywords || keywords.length === 0) return null;
-    const pattern = keywords
+    const unique = normalizeKeywordList(keywords);
+    if (unique.length === 0) return null;
+    const pattern = unique
         .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
         .join('|');
     return new RegExp(`\\b(${pattern})\\b`, 'gi');
 }
 
-function normalizeKeywordMatch(match, keywords) {
-    if (match[0].length < 3) return null;
-    if (!/[a-zA-Z]/.test(match[0])) return null;
+// One map per scan, not a linear scan per match: the same keyword resolution
+// the main thread already does in keyword-regex.ts.
+function getCanonicalMap(keywords) {
+    const map = new Map();
+    for (const k of normalizeKeywordList(keywords)) {
+        const lower = k.toLowerCase();
+        if (!map.has(lower)) map.set(lower, k);
+    }
+    return map;
+}
+
+// Mirrors normalizeKeywordMatch() in keyword-regex.ts. Short and numeric
+// keywords are legitimate ("AI", "QC", "4500"); only an empty match is not.
+function normalizeKeywordMatch(match, canonical) {
+    if (!match[0]) return null;
     const lower = match[0].toLowerCase();
-    return keywords.find(k => k.toLowerCase() === lower) || lower;
+    return canonical.get(lower) || lower;
 }
 
 // Process regex matching on text (for DOCX or plain text)
@@ -22,12 +54,13 @@ function processRegexOnText(text, keywords) {
     const counts = {};
     let totalMatches = 0;
     const combinedRegex = getKeywordRegex(keywords);
+    const canonical = getCanonicalMap(keywords);
 
     if (combinedRegex && text) {
         let match;
         const regex = new RegExp(combinedRegex.source, 'gi');
         while ((match = regex.exec(text)) !== null) {
-            const key = normalizeKeywordMatch(match, keywords);
+            const key = normalizeKeywordMatch(match, canonical);
             if (!key) continue;
             counts[key] = (counts[key] || 0) + 1;
             totalMatches++;
@@ -43,17 +76,18 @@ function processRegexOnPDFCache(pages, keywords) {
     let totalMatches = 0;
 
     const combinedRegex = getKeywordRegex(keywords);
+    const canonical = getCanonicalMap(keywords);
 
     if (combinedRegex) {
         for (let i = 0; i < pages.length; i++) {
-            const pageData = pages[i];
-            const text = pageData.text || '';
+            // The pool sends page text only; items and viewports are never used here.
+            const text = pages[i] || '';
 
             if (text) {
                 let match;
                 const regex = new RegExp(combinedRegex.source, 'gi');
                 while ((match = regex.exec(text)) !== null) {
-                    const key = normalizeKeywordMatch(match, keywords);
+                    const key = normalizeKeywordMatch(match, canonical);
                     if (!key) continue;
                     counts[key] = (counts[key] || 0) + 1;
                     totalMatches++;
