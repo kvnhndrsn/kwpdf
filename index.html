@@ -10,7 +10,12 @@
     <link rel="icon" href="dist/icons/favicon.ico">
 
     <script>
-        if ('serviceWorker' in navigator) {
+        // Only the built page registers the service worker. Served from the
+        // repository root, this source file would register a service_worker.js
+        // whose cache version is still a placeholder and whose ./bundle.js does
+        // not exist there, installing a cache that never resolves. build.js
+        // flips the marker below when it writes dist/index.html.
+        if ('serviceWorker' in navigator && /* BUILD_TARGET */ false) {
             navigator.serviceWorker.register('service_worker.js')
                 .then(reg => console.log('[App] Service Worker registered'))
                 .catch(err => console.error('[App] Service Worker failed:', err));

@@ -51,6 +51,17 @@ let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 // Rewrite asset URLs only. A blanket `dist/` removal also mangles unrelated
 // occurrences, such as a link or label that happens to contain that path.
 html = html.replace(/(\s(?:src|href)=")dist\//g, '$1');
+
+// index.html is also served from the repository root during development, where
+// registering service_worker.js installs a cache whose version is still a
+// placeholder and whose ./bundle.js does not exist. The built page is the only
+// one that registers it.
+const BUILD_TARGET_MARKER = '/* BUILD_TARGET */ false';
+if (!html.includes(BUILD_TARGET_MARKER)) {
+    throw new Error('Build failed: index.html lost its service worker marker');
+}
+html = html.replace(BUILD_TARGET_MARKER, '/* BUILD_TARGET */ true');
+
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 
 copy('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'pdf.worker.min.mjs');
