@@ -477,6 +477,11 @@ async function processBatchFile(file): Promise<boolean> {
     return success;
 }
 
+/** Process files read from a picked directory handle, like a folder drop. */
+export function openFolderFiles(files: File[]) {
+    return processFiles(files);
+}
+
 async function processFiles(source) {
     const files = Array.isArray(source) ? source : null;
     if (files && files.length === 0) return;

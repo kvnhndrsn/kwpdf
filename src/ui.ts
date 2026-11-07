@@ -2,11 +2,19 @@ import { state, beginDocGeneration, beginSearch, resetLibraryState, dropCachedDo
 import * as dom from './dom';
 import { fn } from './cross';
 import * as measure from './measure';
-import { isScanRunning } from './file-handler';
+import { getFileType, isScanRunning, openFolderFiles } from './file-handler';
 import { isOcrRunning } from './ocr';
 import { exportResultsCsv } from './export-results';
 import { clearTextCache } from './text-store';
 import { closeResultsPanel, initResultsPanel, setJumpHandler } from './results-panel';
+import {
+    collectFolderFiles,
+    ensureReadPermission,
+    getLastFolder,
+    pickFolder,
+    saveLastFolder,
+    supportsFolderHandles,
+} from './last-folder';
 import * as keywords from './keywords';
 import { searchTextPages, getTextCoords, wrapIndex, countMatchesInAllDocs } from './search-controller';
 import type { RenderQuality, SearchResult } from './types';
@@ -809,10 +817,70 @@ function jumpToResultRow(row) {
     waitForDoc();
 }
 
+/** Read a picked folder handle and run it through the normal import path. */
+async function openFolderHandle(handle) {
+    if (!(await ensureReadPermission(handle))) {
+        dom.statusBar.textContent = 'Folder access was not granted — open the folder again';
+        return;
+    }
+
+    dom.statusBar.textContent = 'Reading folder "' + (handle.name || 'folder') + '"...';
+    dom.progressBar.style.width = '0%';
+
+    const { files, truncated } = await collectFolderFiles(handle, state.MAX_TOTAL_FILES, (name) => !!getFileType(name));
+
+    if (files.length === 0) {
+        dom.statusBar.textContent = 'No supported files found';
+        return;
+    }
+
+    await openFolderFiles(files);
+
+    if (truncated > 0) {
+        dom.statusBar.textContent += `${dom.statusBar.textContent ? ' · ' : ''}${truncated} file(s) skipped (limit ${state.MAX_TOTAL_FILES})`;
+    }
+}
+
+/** Show the reopen button only when a handle was actually remembered. */
+async function refreshReopenFolderButton() {
+    if (!dom.reopenFolderBtn) return;
+    const available = supportsFolderHandles() && !!(await getLastFolder());
+    dom.reopenFolderBtn.hidden = !available;
+}
+
+function setupLastFolderUI() {
+    refreshReopenFolderButton();
+
+    // With the File System Access API the picker is ours, so we can keep the
+    // handle; without it the label's hidden <input webkitdirectory> takes over.
+    document.querySelector('.btn-open')?.addEventListener('click', async (e) => {
+        if (!supportsFolderHandles()) return;
+        e.preventDefault();
+
+        const handle = await pickFolder();
+        if (!handle) return;
+
+        await saveLastFolder(handle);
+        await refreshReopenFolderButton();
+        await openFolderHandle(handle);
+    });
+
+    dom.reopenFolderBtn?.addEventListener('click', async () => {
+        const handle = await getLastFolder();
+        if (!handle) {
+            dom.statusBar.textContent = 'No folder to reopen — open one first';
+            await refreshReopenFolderButton();
+            return;
+        }
+        await openFolderHandle(handle);
+    });
+}
+
 export function setupEventListeners() {
     window.addEventListener('resize', checkMobileLayout);
     initResultsPanel();
     setJumpHandler(jumpToResultRow);
+    setupLastFolderUI();
 
     /* Toolbar & sidebar buttons */
     dom.zoomOutBtn?.addEventListener('click', zoomOut);
