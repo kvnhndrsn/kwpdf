@@ -20,31 +20,26 @@ has been coded.
   `requestAnimationFrame`, which is paused while the tab is hidden, so a
   document opened in the background finishes loading only when you return to the
   tab. C4 fixed this for search only.
+- **Imported keyword list was not loaded into the editor (fixed).** `importKeywords`
+  selected the imported list and rescanned, but never refreshed the textarea, so
+  it still held the previous list's words and "Save & Apply" overwrote the
+  import. It now calls `loadListIntoEditor()`, and `e2e/part0-verify.spec.js`
+  0.10 asserts the editor matches the imported list.
 
 ## Browser checks still outstanding (Part 0 rows)
 
-Verified: 0.1, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.15.
+Part 0 is automated in `e2e/part0-verify.spec.js` — see the "Part 0 — browser
+verification" section near the end of this file for what each case asserts.
+0.8 was already covered by the DOCX page-attribution case in `e2e/smoke.spec.js`.
 
-Never exercised in a browser:
+Still manual, because the test browser cannot observe them:
 
-| Row | What |
-|---|---|
-| 0.3 | Blank line in a saved keyword list — no hang, counts unchanged |
-| 0.9 | Keyword edit → rescan updates tree counts without reloading docs |
-| 0.10 | Keyword list delete (falls back) and import (rescans) |
-| 0.11 | Service worker network-first for `index.html`/`bundle.js` |
-| 0.12 | Manifest icon loads, no 404 for `icons/favicon.ico` |
-| 0.13 | OCR on two PDFs + "Clear all" leaves no workers, highlights or CPU burn |
-| 0.14 | 20-PDF batch drop leaves no growing pdf.js workers/documents |
-| 0.16 | Folder with one corrupt PDF: no dead tree row, cache total excludes it |
-| 0.17 | 500-page PDF: page indicator tracks fast scrolling without long tasks |
-| 0.18 | 500–1,000 page PDF: first page paints before all pages are set up |
-| 0.19 | Prerender window: ~11 canvases around the current match, far jumps work |
-| 0.20 | Canvas eviction near ±30 pages; highlights, measurements, selection survive |
-| 0.21 | 200-doc rescan renders the tree once; "Clear all" mid-rescan stops cleanly |
-| 0.22 | 50-page DOCX import time vs. before; counts and page attribution identical |
-| 0.23 | Keyword dropdown not rebuilt on Next/Prev; selection follows |
-| 0.24 | OCR badge pulses while running and stops afterwards; no 50 ms timers |
+| Row | What | Why not automated |
+|---|---|---|
+| 0.13 | OCR on two PDFs + "Clear all" leaves no workers, highlights or CPU burn | Driving Tesseract (11 MB wasm) twice in a headless run is slow and flaky |
+| 0.14 | 20-PDF batch drop leaves no growing pdf.js workers/documents | Needs a DevTools heap/worker snapshot |
+| 0.22 | 50-page DOCX import time vs. before; counts and page attribution identical | Needs a before/after timing on real hardware |
+| 0.24 | OCR badge pulses while running and stops afterwards; no 50 ms timers | Needs an OCR run plus a Performance profile |
 
 ## Changes worth a second look
 
@@ -263,3 +258,18 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - Failure modes are visible rather than silent: a refused permission says "Folder access was not granted — open the folder again", an empty folder says "No supported files found", and unreadable entries are skipped individually.
 - Verified: `src/__tests__/last-folder.test.js` (12 cases: API detection, picker cancellation, nested/sorted paths, limit truncation, unreadable entries, unsupported files, permission grant/prompt/deny/throw, and the no-IndexedDB fallback) — the walker is exercised against fake directory handles, which is the same shape the API exposes. eslint 0, format:check 0, typecheck 0, 321 unit tests, 9 e2e tests.
 - NOT verified in a browser: `showDirectoryPicker()` cannot be automated (it needs a real picker and transient activation), so the pick → remember → reopen flow, the permission prompt after a reload, and the hidden/shown state of the reopen button were not exercised end to end. This is the one part of F4 that still needs a manual pass in Chrome or Edge.
+
+## Part 0 — browser verification
+
+- Every automatable row of the Part 0 table is now a Playwright case in `e2e/part0-verify.spec.js` (17 cases; the test name starts with the row number, so the two documents can be read side by side). 0.8 needed nothing new — `e2e/smoke.spec.js` already walks `waiting.docx` matches page by page. Full run: 25 e2e cases in ~47 s, 321 unit tests, eslint 0, `format:check` 0, typecheck 0.
+- 0.1 caveat: a POSIX path component cannot contain `/`, so a folder named exactly `<b>x</b>` cannot exist on disk. The fixture folder is `<b>x` (the hostile part is the `<`, not the closing tag), with `plain.pdf` inside and a sibling `other.pdf`. The case asserts the raw text is shown, that `.folder b` does not exist, that `aria-label` holds the raw name, and that nothing reached the console. The unrepresentable `<b>x</b>` spelling stays a manual row if anyone wants it.
+- 0.2 uses `x<b>geotextile`, `geo"textile` and `R&D` (all present in `mixed.pdf`): three cells, no `<img>`/`<b>` elements injected, clicking the quote-bearing cell filters to its matches and no `alert` dialog fires.
+- 0.3 shows a list with `''` and `'   '` lines gives the same tree count as the clean list. 0.4 shows `geotextile` + `Geotextile` collapse to one cell named `geotextile` with the single-keyword count. 0.9 opens Settings → Keywords, appends a word that `one-kw.pdf` contains but the active list does not (picked from `nonwoven`/`schedule`/`wording`/`separator` so it is never already present), checks the row count rises by exactly 1 without reloading, then removes it and checks the count returns.
+- 0.10 covers import and delete in one case and found a bug: the import selected the new list in the dropdown but left the previous list's words in the editor, so "Save & Apply" would have overwritten the import — fixed by calling `loadListIntoEditor()` in `importKeywords`. The case imports via the real file chooser, asserts the editor shows the imported words, deletes the list (accepting the `confirm`), and checks the dropdown, `tender_custom_lists` and `tender_keyword_list` all fall back.
+- 0.5/0.6: a no-hit inline search removes every `div.highlight-mark` (PDF) and `mark.doc-highlight` (DOCX) mark, and returning to the hit term restores one `.current`. 0.7: three `tender` occurrences on one DOCX page step 1 → 2 → 3 with exactly one current mark, still on "Tender page one". 0.23: a `data-probe` attribute set on the keyword dropdown menu survives Next/Prev, so the menu is not rebuilt (a new element would lose it).
+- 0.11: with the context offline a reload still paints the sidebar and "Ready" (after one online load so the worker owns the shell). 0.12: `manifest.json` and the first icon in it both return 200, the icon with an image content type.
+- 0.15: one dropped PDF reports "... across 1 document". 0.16: `bad.pdf` + `one-kw.pdf` in one drop leaves exactly one tree row, no `bad.pdf` in the results, "failed" in the status bar and no page errors.
+- 0.17/0.18 use `large.pdf` (120 pages, not 500): opens on page 1, `#pageTotal` is 120, jumping to page 100 lands there. 0.19/0.20: page 1, page 60 and back to page 1 each have one canvas, and the document never holds more than 40 canvases at once. Far-match rendering through search was not re-driven; the window was exercised by scrolling.
+- 0.21: 20 documents scanned, then a keyword list change starts the rescan and "Clear all" is pressed mid-flight — the tree empties, the drop hint returns and there are no page or console errors.
+- Not automated (see the table at the top of this file): 0.13 OCR reset, 0.14 pdf.js heap, 0.22 DOCX import timing, 0.24 OCR pulse.
+- Scope caveat: the 0.17 "no long tasks while scrolling" and 0.19 "~11 canvases for a 200-hit search" claims are not measured here. The case proves the page indicator tracks a jump and that canvases stay bounded, not the frame timings or the exact prerender radius.

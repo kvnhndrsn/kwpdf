@@ -499,6 +499,9 @@ function importKeywords() {
                 createList(listName, words);
                 switchKeywordList(listName);
                 populateListSelector();
+                // The selector now shows the imported list, so the editor must too;
+                // otherwise Save & Apply would write the previous list's words over it.
+                loadListIntoEditor();
                 refreshScansAfterKeywordChange();
 
                 alert(`Imported "${listName}" with ${words.length} keywords.`);
