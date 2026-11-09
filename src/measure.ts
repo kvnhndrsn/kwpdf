@@ -1,7 +1,7 @@
 import { state } from './state';
 import * as dom from './dom';
 import { MEASURE_STYLE } from './measure-style';
-import { bubbleBox, calloutLines, leaderStart } from './callout';
+import { calloutLines, calloutShape } from './callout';
 
 // ── state ──
 
@@ -1149,6 +1149,9 @@ function calloutMetrics(s) {
         // The plate's border sits inside its box, so reserve it as padding.
         paddingX: (MEASURE_STYLE.calloutPaddingX + MEASURE_STYLE.calloutBorderWidth) * s,
         paddingY: (MEASURE_STYLE.calloutPaddingY + MEASURE_STYLE.calloutBorderWidth) * s,
+        radius: MEASURE_STYLE.calloutRadius * s,
+        tailHalfBase: MEASURE_STYLE.calloutTailHalfBase * s,
+        strokeWidth: MEASURE_STYLE.calloutBorderWidth * s,
         measureText: screenTextWidth,
     };
 }
@@ -1165,69 +1168,62 @@ function findMeasurement(id) {
     return (measurementsByDoc[url] || []).find((m) => m.id === id) || null;
 }
 
-/** Position the leader, arrowhead and plate of one callout (screen pixels). */
-function layoutCallout(group, tipX, tipY, anchorX, anchorY, lines, s) {
-    const metrics = calloutMetrics(s);
-    const box = bubbleBox({ x: anchorX, y: anchorY }, lines, metrics);
-    const start = leaderStart(box, { x: tipX, y: tipY });
+const CALLOUT_SVG_NS = 'http://www.w3.org/2000/svg';
 
-    const dx = tipX - start.x;
-    const dy = tipY - start.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-
-    const leader = group.querySelector('.measure-callout-leader');
-    if (leader) {
-        leader.style.display = len > 0.5 ? '' : 'none';
-        if (len > 0.5) {
-            const weight = Math.max(1, MEASURE_STYLE.leaderWidth * s);
-            leader.style.left = start.x + 'px';
-            leader.style.top = start.y - weight / 2 + 'px';
-            leader.style.width = len + 'px';
-            leader.style.height = weight + 'px';
-            leader.style.transform = 'rotate(' + angle + 'deg)';
-        }
-    }
-
-    const arrow = group.querySelector('.measure-callout-arrow');
-    if (arrow) {
-        arrow.style.display = len > 0.5 ? '' : 'none';
-        if (len > 0.5) {
-            arrow.style.left = tipX - 10 + 'px';
-            arrow.style.top = tipY - 7 + 'px';
-            arrow.style.transform = 'rotate(' + angle + 'deg)';
-        }
-    }
-
-    const bubble = group.querySelector('.measure-callout');
-    if (bubble) {
-        bubble.style.left = box.left + 'px';
-        bubble.style.top = box.top + 'px';
-        bubble.style.width = box.width + 'px';
-        bubble.style.height = box.height + 'px';
-        bubble.style.padding = metrics.paddingY + 'px ' + metrics.paddingX + 'px';
-        bubble.style.fontSize = metrics.fontSize + 'px';
-        bubble.style.lineHeight = String(metrics.lineHeight);
-        bubble.style.borderRadius = MEASURE_STYLE.calloutRadius * s + 'px';
-        bubble.style.borderWidth = Math.max(1, MEASURE_STYLE.calloutBorderWidth * s) + 'px';
-    }
+/** Bubble geometry for one callout, in screen pixels at the current zoom. */
+function calloutShapeAt(tip, anchor, lines, s) {
+    return calloutShape({ x: anchor.x * s, y: anchor.y * s }, { x: tip.x * s, y: tip.y * s }, lines, calloutMetrics(s));
 }
 
-/** @param {string} [measId] */
-function createCalloutArrow(measId) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '12');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('class', 'measure-callout-arrow');
-    svg.style.transformOrigin = '10px 7px';
-    if (measId) svg.dataset.measId = measId;
+/** @param {boolean} ghost */
+function createCalloutSvg(ghost) {
+    const svg = document.createElementNS(CALLOUT_SVG_NS, 'svg');
+    svg.setAttribute('class', 'measure-callout-svg');
 
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    poly.setAttribute('points', '10,7 0,0 0,14');
-    poly.setAttribute('fill', FINAL_COLOR);
-    if (measId) poly.dataset.measId = measId;
-    svg.appendChild(poly);
+    // The plate, its tail and the outline are one path: filled white over the
+    // drawing, stroked in the measurement colour.
+    const plate = document.createElementNS(CALLOUT_SVG_NS, 'path');
+    svg.appendChild(plate);
+
+    plate.setAttribute('stroke', FINAL_COLOR);
+    plate.setAttribute('stroke-linejoin', 'round');
+    plate.setAttribute('fill', ghost ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.92)');
+    if (ghost) plate.setAttribute('stroke-dasharray', '5 3');
     return svg;
+}
+
+function svgNumber(value) {
+    return Math.round(value * 100) / 100;
+}
+
+/** Draw a shape: plate outline and tail, then leader and arrowhead. */
+function applyCalloutSvg(svg, shape, s) {
+    const b = shape.bounds;
+    svg.setAttribute('viewBox', [b.left, b.top, b.width, b.height].map(svgNumber).join(' '));
+    svg.setAttribute('width', b.width);
+    svg.setAttribute('height', b.height);
+    svg.style.left = b.left + 'px';
+    svg.style.top = b.top + 'px';
+
+    const plate = svg.querySelector('path');
+    plate.setAttribute('d', shape.path);
+    plate.setAttribute('transform', 'translate(' + shape.box.left + ' ' + shape.box.top + ')');
+    plate.setAttribute('stroke-width', Math.max(1, MEASURE_STYLE.calloutBorderWidth * s));
+}
+
+/** Line the clickable plate up with the drawn one, so text and drag agree. */
+function placeCalloutBox(group, shape, s) {
+    const bubble = group.querySelector('.measure-callout');
+    if (!bubble) return;
+    const metrics = calloutMetrics(s);
+    bubble.style.left = shape.box.left + 'px';
+    bubble.style.top = shape.box.top + 'px';
+    bubble.style.width = shape.box.width + 'px';
+    bubble.style.height = shape.box.height + 'px';
+    bubble.style.padding = metrics.paddingY + 'px ' + metrics.paddingX + 'px';
+    bubble.style.fontSize = metrics.fontSize + 'px';
+    bubble.style.lineHeight = String(metrics.lineHeight);
+    bubble.style.borderRadius = metrics.radius + 'px';
 }
 
 function renderCallout(tip, anchor, text, measId) {
@@ -1239,20 +1235,18 @@ function renderCallout(tip, anchor, text, measId) {
     const lines = calloutLines(editing ? editingDraftText : text);
     if (!editing && lines.length === 0) return;
 
+    const shape = calloutShapeAt(tip, anchor, lines, s);
+
     const group = document.createElement('div');
     group.className = 'measure-callout-group';
+    if (editing) group.classList.add('is-editing');
     if (measId) group.dataset.measId = measId;
 
-    const leader = document.createElement('div');
-    leader.className = 'measure-line m-line measure-callout-leader';
-    leader.style.background = FINAL_COLOR;
-    if (measId) leader.dataset.measId = measId;
-    group.appendChild(leader);
-    group.appendChild(createCalloutArrow(measId));
+    const svg = createCalloutSvg(false);
+    group.appendChild(svg);
 
     const bubble = document.createElement('div');
     bubble.className = 'measure-callout';
-    bubble.style.borderColor = FINAL_COLOR;
     if (editing) bubble.classList.add('is-editing');
     if (measId) bubble.dataset.measId = measId;
 
@@ -1266,9 +1260,14 @@ function renderCallout(tip, anchor, text, measId) {
         editor.setAttribute('aria-label', 'Callout text');
         editor.addEventListener('pointerdown', stopCalloutEvent);
         editor.addEventListener('click', stopCalloutEvent);
+        // Grow the plate with the text as it is typed. The editor is updated in
+        // place and never re-rendered, so the caret, undo history and the text
+        // itself survive every keystroke.
         editor.addEventListener('input', () => {
             editingDraftText = editor.value;
-            layoutCallout(group, tip.x * s, tip.y * s, anchor.x * s, anchor.y * s, calloutLines(editingDraftText), s);
+            const next = calloutShapeAt(tip, anchor, calloutLines(editingDraftText), s);
+            applyCalloutSvg(svg, next, s);
+            placeCalloutBox(group, next, s);
         });
         editor.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -1319,7 +1318,8 @@ function renderCallout(tip, anchor, text, measId) {
 
     group.appendChild(bubble);
     layer.appendChild(group);
-    layoutCallout(group, tip.x * s, tip.y * s, anchor.x * s, anchor.y * s, lines, s);
+    applyCalloutSvg(svg, shape, s);
+    placeCalloutBox(group, shape, s);
 }
 
 /** Drag a bubble; a press that never moves is a click to re-edit the text. */
@@ -1477,7 +1477,9 @@ function renderPreviewLine() {
     const last = { x: previewLine.x1, y: previewLine.y1 };
     const mouse = { x: previewLine.x2, y: previewLine.y2 };
 
-    drawGhostSegment(layer, last, mouse, s);
+    // A callout preview draws its own leader and tail; the plain dashed segment
+    // would only double it up with a second, differently coloured line.
+    if (activeTool !== 'callout') drawGhostSegment(layer, last, mouse, s);
 
     if (activeTool === 'distance') {
         const real = realWorldMm(distanceBetween(last, mouse));
@@ -1528,20 +1530,19 @@ function renderPreviewLine() {
                     addGhostLabel(layer, (cx + 6) * s, (cy + 20) * s, 'Total area: ' + formatArea(totalAreaMm2));
                 }
             }
-        } else if (activeTool === 'callout') {
-            const metrics = calloutMetrics(s);
-            const box = bubbleBox({ x: mouse.x * s, y: mouse.y * s }, [], metrics);
-            const ghost = document.createElement('div');
-            ghost.className = 'measure-callout-ghost';
-            ghost.style.left = box.left + 'px';
-            ghost.style.top = box.top + 'px';
-            ghost.style.width = box.width + 'px';
-            ghost.style.height = box.height + 'px';
-            layer.appendChild(ghost);
-        } else {
-            const real = realWorldMm(distanceBetween(last, mouse));
-            addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, formatLength(real));
         }
+    } else if (activeTool === 'callout') {
+        // Show the bubble, tail and leader a click here would create.
+        const shape = calloutShapeAt(pendingPoints[0], mouse, ['Note'], s);
+        const ghost = document.createElement('div');
+        ghost.className = 'measure-callout-ghost';
+        const svg = createCalloutSvg(true);
+        ghost.appendChild(svg);
+        layer.appendChild(ghost);
+        applyCalloutSvg(svg, shape, s);
+    } else {
+        const real = realWorldMm(distanceBetween(last, mouse));
+        addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, formatLength(real));
     }
 }
 

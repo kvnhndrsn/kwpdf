@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
 import { burnMeasurementsIntoPdf, measuredFileName } from '../measure-burn';
-import { bubbleBox, leaderStart } from '../callout';
+import { calloutShape } from '../callout';
 
 /**
  * Matrices pdf.js's PageViewport produces at scale 1 for the three pages built
@@ -193,27 +193,30 @@ describe('burnMeasurementsIntoPdf', () => {
         const font = await probe.embedFont(StandardFonts.Helvetica);
         const tipUser = { x: tip.x, y: 300 - tip.y };
         const anchorUser = { x: anchor.x, y: 300 - anchor.y };
-        const box = bubbleBox({ x: anchorUser.x, y: -anchorUser.y }, ['150x150 SHS COL'], {
-            fontSize: 9,
-            lineHeight: 1.25,
-            paddingX: 8,
-            paddingY: 4,
-            measureText: (text, size) => font.widthOfTextAtSize(text, size),
-        });
-        const start = leaderStart(box, { x: tipUser.x, y: -tipUser.y });
+        const shape = calloutShape(
+            { x: anchorUser.x, y: -anchorUser.y },
+            { x: tipUser.x, y: -tipUser.y },
+            ['150x150 SHS COL'],
+            {
+                fontSize: 9,
+                lineHeight: 1.25,
+                paddingX: 8,
+                paddingY: 4,
+                radius: 6,
+                tailHalfBase: 8,
+                strokeWidth: 1.5,
+                measureText: (text, size) => font.widthOfTextAtSize(text, size),
+            },
+        );
+        expect(shape.tail).not.toBeNull();
+        expect(shape.tail.edge).toBe('top');
 
-        const leaders = [...content.matchAll(/([-\d.]+) ([-\d.]+) m\n([-\d.]+) ([-\d.]+) l/g)].map((m) => ({
-            from: { x: parseFloat(m[1]), y: parseFloat(m[2]) },
-            to: { x: parseFloat(m[3]), y: parseFloat(m[4]) },
-        }));
-        const leader = leaders.find((l) => Math.abs(l.to.x - tipUser.x) < 0.01 && Math.abs(l.to.y - tipUser.y) < 0.01);
-        expect(leader).toBeTruthy();
-        // The leader starts where the plate ends, not at the bubble's centre.
-        expect(leader.from.x).toBeCloseTo(start.x, 1);
-        expect(leader.from.y).toBeCloseTo(-start.y, 1);
-
-        // Rounded plate: four quarter-circle corners.
-        expect((content.match(/ c\n/g) || []).length).toBeGreaterThanOrEqual(4);
+        // One filled and stroked path with no leader: four rounded corners and
+        // the two bowed flanks of the tail, so nothing else is drawn to the tip.
+        expect((content.match(/ c\n/g) || []).length).toBe(7);
+        // The tail runs all the way to the detail: the apex is the detail.
+        expect(shape.tail.apex.x).toBeCloseTo(tipUser.x, 6);
+        expect(shape.tail.apex.y).toBeCloseTo(-tipUser.y, 6);
     });
 
     it('does not burn a callout that never received text', async () => {

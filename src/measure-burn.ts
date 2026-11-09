@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { PDFFont, PDFPage } from 'pdf-lib';
 import { MEASURE_STYLE } from './measure-style';
-import { bubbleBox, calloutLines, leaderStart } from './callout';
+import { calloutLines, calloutShape } from './callout';
 import type { CalloutMetrics } from './callout';
 
 /** A measured point, in PDF-viewport points at scale 1 (y down from the page top). */
@@ -57,6 +57,9 @@ const LABEL_PADDING_X = 5;
 const LABEL_PADDING_Y = 2;
 const LABEL_LINE_HEIGHT = 1.2;
 const LABEL_BASELINE = 0.8;
+
+/** Printed callout sizes are the on-screen ones scaled by the type ratio. */
+const calloutTypeScale = MEASURE_STYLE.printCalloutFontSize / MEASURE_STYLE.calloutFontPx;
 
 /**
  * `drawing.pdf` → `drawing-measured.pdf`. A name that already carries the
@@ -280,23 +283,28 @@ function drawCallout(page: PDFPage, tip: Pt, anchor: Pt, lines: string[], font: 
         lineHeight: MEASURE_STYLE.calloutLineHeight,
         paddingX: MEASURE_STYLE.calloutPaddingX,
         paddingY: MEASURE_STYLE.calloutPaddingY,
+        radius: MEASURE_STYLE.calloutRadius,
+        // The tail's width is sized like the text it belongs to: 9pt on paper
+        // against 15px on screen, so it keeps its proportions in both.
+        tailHalfBase: MEASURE_STYLE.calloutTailHalfBase * calloutTypeScale,
+        strokeWidth: MEASURE_STYLE.calloutBorderWidth,
         measureText: (text: string, size: number) => font.widthOfTextAtSize(text, size),
     };
     const flip = (p: Pt): Pt => ({ x: p.x, y: -p.y });
 
-    const box = bubbleBox(flip(anchor), lines, metrics);
-    const start = flip(leaderStart(box, flip(tip)));
-    const dir = unitVector(start, tip);
-    if (dir) {
-        drawSegment(page, start, tip);
-        drawArrow(page, tip, dir);
-    }
+    // callout.ts lays the shape out y-down, so the flip gives it the same frame
+    // the overlay uses, and the box's top-left is the origin drawSvgPath wants.
+    const shape = calloutShape(flip(anchor), flip(tip), lines, metrics);
+    const box = shape.box;
 
-    page.drawSvgPath(roundedRectPath(box.width, box.height, MEASURE_STYLE.calloutRadius), {
+    // Plate, tail and outline are one path, filled white and stroked. Filling
+    // and stroking together is what hides the drawing under the bubble while
+    // the tail stays part of the same shape instead of a separate triangle.
+    page.drawSvgPath(shape.path, {
         x: box.left,
         y: -box.top,
         color: rgb(1, 1, 1),
-        opacity: 0.9,
+        opacity: 0.92,
         borderColor: BURN_COLOR,
         borderWidth: MEASURE_STYLE.calloutBorderWidth,
         borderOpacity: BURN_OPACITY,
@@ -313,39 +321,6 @@ function drawCallout(page: PDFPage, tip: Pt, anchor: Pt, lines: string[], font: 
             color: rgb(0, 0, 0),
         });
     });
-}
-
-/** Rounded rectangle in SVG path syntax, authored y-down from its top-left. */
-function roundedRectPath(width: number, height: number, radius: number): string {
-    const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-    if (r === 0) {
-        return 'M 0 0 L ' + num(width) + ' 0 L ' + num(width) + ' ' + num(height) + ' L 0 ' + num(height) + ' Z';
-    }
-    // Control-point offset for a quarter circle, 4/3 * tan(pi/8).
-    const c = r * 0.5522847498307936;
-    return [
-        'M ' + num(r) + ' 0',
-        'L ' + num(width - r) + ' 0',
-        'C ' + num(width - r + c) + ' 0 ' + num(width) + ' ' + num(r - c) + ' ' + num(width) + ' ' + num(r),
-        'L ' + num(width) + ' ' + num(height - r),
-        'C ' +
-            num(width) +
-            ' ' +
-            num(height - r + c) +
-            ' ' +
-            num(width - r + c) +
-            ' ' +
-            num(height) +
-            ' ' +
-            num(width - r) +
-            ' ' +
-            num(height),
-        'L ' + num(r) + ' ' + num(height),
-        'C ' + num(r - c) + ' ' + num(height) + ' 0 ' + num(height - r + c) + ' 0 ' + num(height - r),
-        'L 0 ' + num(r),
-        'C 0 ' + num(r - c) + ' ' + num(r - c) + ' 0 ' + num(r) + ' 0',
-        'Z',
-    ].join(' ');
 }
 
 function unitVector(from: Pt, to: Pt): Pt | null {

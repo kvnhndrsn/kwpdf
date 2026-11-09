@@ -42,7 +42,8 @@ export const MEASURE_STYLE = {
     calloutLineHeight: 1.25,
     calloutPaddingX: 8,
     calloutPaddingY: 4,
-    calloutRadius: 5,
-    calloutBorderWidth: 1,
-    leaderWidth: 1,
+    calloutRadius: 6,
+    calloutBorderWidth: 1.5,
+    /** How wide the bubble's tail is where it leaves the plate. */
+    calloutTailHalfBase: 8,
 } as const;
