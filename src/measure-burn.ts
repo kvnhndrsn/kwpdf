@@ -52,14 +52,15 @@ interface Pt {
 const BURN_COLOR = rgb(MEASURE_STYLE.red, MEASURE_STYLE.green, MEASURE_STYLE.blue);
 const BURN_OPACITY = MEASURE_STYLE.opacity;
 const AREA_FILL_OPACITY = 0.15;
+/** White plate fill: translucent enough to see the drawing it covers. */
+export const CALLOUT_FILL_OPACITY = 0.8;
+/** Arrowheads are fills, so they get the same see-through treatment. */
+const ARROW_OPACITY = 0.8;
 const LABEL_BACKGROUND_OPACITY = 0.75;
 const LABEL_PADDING_X = 5;
 const LABEL_PADDING_Y = 2;
 const LABEL_LINE_HEIGHT = 1.2;
 const LABEL_BASELINE = 0.8;
-
-/** Printed callout sizes are the on-screen ones scaled by the type ratio. */
-const calloutTypeScale = MEASURE_STYLE.printCalloutFontSize / MEASURE_STYLE.calloutFontPx;
 
 /**
  * `drawing.pdf` → `drawing-measured.pdf`. A name that already carries the
@@ -200,11 +201,15 @@ function drawArrow(page: PDFPage, tip: Pt, dir: Pt): void {
         y: tip.y - dir.y * MEASURE_STYLE.arrowLength,
     };
     const half = MEASURE_STYLE.arrowWidth / 2;
-    drawPolygon(page, [
-        tip,
-        { x: base.x - dir.y * half, y: base.y + dir.x * half },
-        { x: base.x + dir.y * half, y: base.y - dir.x * half },
-    ]);
+    drawPolygon(
+        page,
+        [
+            tip,
+            { x: base.x - dir.y * half, y: base.y + dir.x * half },
+            { x: base.x + dir.y * half, y: base.y - dir.x * half },
+        ],
+        ARROW_OPACITY,
+    );
 }
 
 function drawFilledPath(page: PDFPage, points: Pt[], opacity: number): void {
@@ -278,15 +283,17 @@ function drawLabel(page: PDFPage, anchor: Pt, label: string, font: PDFFont): voi
 function drawCallout(page: PDFPage, tip: Pt, anchor: Pt, lines: string[], font: PDFFont): void {
     if (lines.length === 0) return;
 
+    // The callout is drawn at its on-screen size: 15px at 100% zoom is 15pt on
+    // paper, so the note comes out the size it was typed at. Printing it at the
+    // smaller label type made a bubble that read as 15px in the app come out at
+    // two thirds of that in the saved file.
     const metrics: CalloutMetrics = {
-        fontSize: MEASURE_STYLE.printCalloutFontSize,
+        fontSize: MEASURE_STYLE.calloutFontPx,
         lineHeight: MEASURE_STYLE.calloutLineHeight,
         paddingX: MEASURE_STYLE.calloutPaddingX,
         paddingY: MEASURE_STYLE.calloutPaddingY,
         radius: MEASURE_STYLE.calloutRadius,
-        // The tail's width is sized like the text it belongs to: 9pt on paper
-        // against 15px on screen, so it keeps its proportions in both.
-        tailHalfBase: MEASURE_STYLE.calloutTailHalfBase * calloutTypeScale,
+        tailHalfBase: MEASURE_STYLE.calloutTailHalfBase,
         strokeWidth: MEASURE_STYLE.calloutBorderWidth,
         measureText: (text: string, size: number) => font.widthOfTextAtSize(text, size),
     };
@@ -304,7 +311,7 @@ function drawCallout(page: PDFPage, tip: Pt, anchor: Pt, lines: string[], font: 
         x: box.left,
         y: -box.top,
         color: rgb(1, 1, 1),
-        opacity: 0.92,
+        opacity: CALLOUT_FILL_OPACITY,
         borderColor: BURN_COLOR,
         borderWidth: MEASURE_STYLE.calloutBorderWidth,
         borderOpacity: BURN_OPACITY,

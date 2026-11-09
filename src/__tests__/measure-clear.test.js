@@ -71,6 +71,30 @@ describe('clearMeasurementsForCurrentDoc', () => {
         expect(stored[B]).toHaveLength(1);
     });
 
+    it('takes detail callouts with it, not just the dimension lines', async () => {
+        const { state, measure } = await loadModules({
+            [A]: [
+                {
+                    id: 'c1',
+                    type: 'callout',
+                    points: [
+                        { page: 1, x: 10, y: 10 },
+                        { page: 1, x: 40, y: 40 },
+                    ],
+                    label: '',
+                    text: 'SEE DETAIL',
+                },
+                { id: 'm1', type: 'distance', points: [], label: '1.00 m' },
+            ],
+        });
+        openDoc(state, A);
+
+        measure.clearMeasurementsForCurrentDoc();
+
+        expect(measure.getDocMeasurements(A)).toEqual([]);
+        expect(JSON.parse(localStorage.getItem('kwpdf_measurements'))[A]).toBeUndefined();
+    });
+
     it('does nothing when no document is open', async () => {
         const { measure } = await loadModules(seeded());
 

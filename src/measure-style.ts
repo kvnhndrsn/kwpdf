@@ -35,10 +35,10 @@ export const MEASURE_STYLE = {
 
     /**
      * Detail callout bubble. The screen size scales with zoom (the bubble is
-     * part of the drawing), while the printed size is fixed like the labels.
+     * part of the drawing) and the printed one matches it: a 15px note at 100%
+     * zoom is 15pt on paper, so a saved note looks like the one that was typed.
      */
     calloutFontPx: 15,
-    printCalloutFontSize: 9,
     calloutLineHeight: 1.25,
     calloutPaddingX: 8,
     calloutPaddingY: 4,

@@ -309,6 +309,15 @@ export function clearMeasurementsForCurrentDoc() {
     const url = getDocKey();
     if (!url) return;
     delete measurementsByDoc[url];
+    // A bubble that is still being edited has not been added to the list yet,
+    // and a placed point that has not had its second click is not in it either,
+    // so clearing the list alone left both on the page.
+    editingCalloutId = null;
+    editingDraftText = '';
+    editingPreviousText = '';
+    pendingPoints = [];
+    previewLine = null;
+    activePageNum = null;
     saveMeasurements();
     markCommittedDirty();
     renderAllMeasurements();
@@ -1187,7 +1196,7 @@ function createCalloutSvg(ghost) {
 
     plate.setAttribute('stroke', FINAL_COLOR);
     plate.setAttribute('stroke-linejoin', 'round');
-    plate.setAttribute('fill', ghost ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.92)');
+    plate.setAttribute('fill', ghost ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.8)');
     if (ghost) plate.setAttribute('stroke-dasharray', '5 3');
     return svg;
 }
@@ -1587,6 +1596,8 @@ function addArrow(layer, x, y, angleDeg, color, measId) {
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', '10,7 0,0 0,14');
     poly.setAttribute('fill', color);
+    // A little see-through, so the drawing under a filled head still shows.
+    poly.setAttribute('fill-opacity', '0.85');
     if (measId) poly.dataset.measId = measId;
     svg.appendChild(poly);
     layer.appendChild(svg);

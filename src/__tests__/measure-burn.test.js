@@ -198,7 +198,8 @@ describe('burnMeasurementsIntoPdf', () => {
             { x: tipUser.x, y: -tipUser.y },
             ['150x150 SHS COL'],
             {
-                fontSize: 9,
+                // Printed callouts are drawn at their on-screen size.
+                fontSize: 15,
                 lineHeight: 1.25,
                 paddingX: 8,
                 paddingY: 4,
