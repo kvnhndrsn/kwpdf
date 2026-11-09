@@ -32,4 +32,17 @@ export const MEASURE_STYLE = {
     printLabelFontSize: 9,
     labelOffsetX: 6,
     labelOffsetY: 10,
+
+    /**
+     * Detail callout bubble. The screen size scales with zoom (the bubble is
+     * part of the drawing), while the printed size is fixed like the labels.
+     */
+    calloutFontPx: 15,
+    printCalloutFontSize: 9,
+    calloutLineHeight: 1.25,
+    calloutPaddingX: 8,
+    calloutPaddingY: 4,
+    calloutRadius: 5,
+    calloutBorderWidth: 1,
+    leaderWidth: 1,
 } as const;

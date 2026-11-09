@@ -687,6 +687,7 @@ export function updateToolbarState() {
     (dom.measureDistBtn as HTMLButtonElement).disabled = !hasDoc;
     (dom.measurePerimBtn as HTMLButtonElement).disabled = !hasDoc;
     (dom.measureAreaBtn as HTMLButtonElement).disabled = !hasDoc;
+    (dom.measureCalloutBtn as HTMLButtonElement).disabled = !hasDoc;
     (dom.clearMeasureBtn as HTMLButtonElement).disabled = !document.querySelector('.measure-line');
     (dom.scaleInput as HTMLInputElement).disabled = !hasDoc;
     // A PDF to write into, at least one measurement, and no save in flight.
@@ -957,6 +958,12 @@ export function setupEventListeners() {
         else measure.activateTool('area');
         updateMeasureUI();
     });
+    dom.measureCalloutBtn?.addEventListener('click', () => {
+        const tool = measure.getActiveTool();
+        if (tool === 'callout') measure.deactivateTool();
+        else measure.activateTool('callout');
+        updateMeasureUI();
+    });
     dom.clearMeasureBtn?.addEventListener('click', () => {
         measure.clearMeasurementsForCurrentDoc();
         updateMeasureUI();
@@ -1057,7 +1064,10 @@ export function setupEventListeners() {
             dom.matchInput.blur();
             closeMobileSidebar();
             closeSearchOverlay();
-            if (measure.getIsCalibrating()) {
+            if (measure.isEditingCallout()) {
+                measure.cancelCalloutEdit();
+                updateMeasureUI();
+            } else if (measure.getIsCalibrating()) {
                 measure.cancelCalibration();
                 updateMeasureUI();
             } else if (measure.getActiveTool()) {
@@ -1324,6 +1334,7 @@ export function updateMeasureUI() {
     dom.measureDistBtn?.classList.toggle('active-tool', active === 'distance');
     dom.measurePerimBtn?.classList.toggle('active-tool', active === 'perimeter');
     dom.measureAreaBtn?.classList.toggle('active-tool', active === 'area');
+    dom.measureCalloutBtn?.classList.toggle('active-tool', active === 'callout');
     dom.calibrateScaleBtn?.classList.toggle('active-tool', calibrating);
     updateToolbarState();
 }

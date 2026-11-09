@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
 import { burnMeasurementsIntoPdf, measuredFileName } from '../measure-burn';
+import { bubbleBox, leaderStart } from '../callout';
 
 /**
  * Matrices pdf.js's PageViewport produces at scale 1 for the three pages built
@@ -173,6 +174,67 @@ describe('burnMeasurementsIntoPdf', () => {
         expect(content).toContain(hexOf('Perim: 4.00 m @ 1:100'));
     });
 
+    it('draws a callout plate on a leader that leaves its edge', async () => {
+        const bytes = await makeSourcePdf();
+        const tip = { page: 1, x: 30, y: 40 };
+        const anchor = { page: 1, x: 120, y: 140 };
+        const result = await burn(bytes, [{ type: 'callout', points: [tip, anchor], text: '150x150 SHS COL' }]);
+
+        expect(result.drawn).toBe(1);
+        const content = contentOf(await PDFDocument.load(result.bytes), 0);
+
+        // The note is real text on the page, not a picture of one.
+        expect(content).toContain(hexOf('150x150 SHS COL'));
+
+        // Rebuild the plate with the same geometry and the same embedded font.
+        // The page is 300pt tall, so viewport y becomes user-space y = 300 - y,
+        // and callout.ts then works in its own y-down frame (negated y).
+        const probe = await PDFDocument.create();
+        const font = await probe.embedFont(StandardFonts.Helvetica);
+        const tipUser = { x: tip.x, y: 300 - tip.y };
+        const anchorUser = { x: anchor.x, y: 300 - anchor.y };
+        const box = bubbleBox({ x: anchorUser.x, y: -anchorUser.y }, ['150x150 SHS COL'], {
+            fontSize: 9,
+            lineHeight: 1.25,
+            paddingX: 8,
+            paddingY: 4,
+            measureText: (text, size) => font.widthOfTextAtSize(text, size),
+        });
+        const start = leaderStart(box, { x: tipUser.x, y: -tipUser.y });
+
+        const leaders = [...content.matchAll(/([-\d.]+) ([-\d.]+) m\n([-\d.]+) ([-\d.]+) l/g)].map((m) => ({
+            from: { x: parseFloat(m[1]), y: parseFloat(m[2]) },
+            to: { x: parseFloat(m[3]), y: parseFloat(m[4]) },
+        }));
+        const leader = leaders.find((l) => Math.abs(l.to.x - tipUser.x) < 0.01 && Math.abs(l.to.y - tipUser.y) < 0.01);
+        expect(leader).toBeTruthy();
+        // The leader starts where the plate ends, not at the bubble's centre.
+        expect(leader.from.x).toBeCloseTo(start.x, 1);
+        expect(leader.from.y).toBeCloseTo(-start.y, 1);
+
+        // Rounded plate: four quarter-circle corners.
+        expect((content.match(/ c\n/g) || []).length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('does not burn a callout that never received text', async () => {
+        const bytes = await makeSourcePdf();
+        const result = await burn(bytes, [
+            {
+                type: 'callout',
+                points: [
+                    { page: 1, x: 10, y: 10 },
+                    { page: 1, x: 60, y: 60 },
+                ],
+                text: '   ',
+            },
+        ]);
+
+        expect(result.drawn).toBe(0);
+        expect(result.skippedPages).toEqual([]);
+        const content = contentOf(await PDFDocument.load(result.bytes), 0);
+        expect(content).not.toContain(' c\n');
+    });
+
     it('skips measurements on pages the document does not have', async () => {
         const bytes = await makeSourcePdf();
         const result = await burn(bytes, [
@@ -249,6 +311,14 @@ describe('burnMeasurementsIntoPdf', () => {
                 ],
                 label: '1.00 m @ 1:100',
             },
+            {
+                type: 'callout',
+                points: [
+                    { page: 1, x: 40, y: 80 },
+                    { page: 1, x: 150, y: 160 },
+                ],
+                text: 'SEE DETAIL 3',
+            },
         ]);
 
         // pdf.js is a second, independent reader: if it can extract the label,
@@ -259,6 +329,7 @@ describe('burnMeasurementsIntoPdf', () => {
             const content = await page.getTextContent();
             const text = content.items.map((item) => item.str).join(' ');
             expect(text).toContain('1.00 m @ 1:100');
+            expect(text).toContain('SEE DETAIL 3');
             expect(text).toContain('original');
         } finally {
             await pdf.destroy();

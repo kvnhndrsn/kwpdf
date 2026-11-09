@@ -1,6 +1,8 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { PDFFont, PDFPage } from 'pdf-lib';
 import { MEASURE_STYLE } from './measure-style';
+import { bubbleBox, calloutLines, leaderStart } from './callout';
+import type { CalloutMetrics } from './callout';
 
 /** A measured point, in PDF-viewport points at scale 1 (y down from the page top). */
 export interface BurnPoint {
@@ -13,6 +15,8 @@ export interface BurnMeasurement {
     type?: string;
     points?: BurnPoint[];
     label?: string;
+    /** Detail callout note; callouts have no measurement label. */
+    text?: string;
 }
 
 /**
@@ -85,6 +89,8 @@ export async function burnMeasurementsIntoPdf(input: BurnInput): Promise<BurnRes
     for (const measurement of input.measurements || []) {
         const points = Array.isArray(measurement?.points) ? measurement.points : [];
         if (points.length === 0) continue;
+        // A callout with no note only ever exists while its editor is open.
+        if (measurement.type === 'callout' && calloutLines(measurement.text).length === 0) continue;
         const pageNum = points[0]?.page;
 
         if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pageCount) {
@@ -152,6 +158,11 @@ function drawMeasurement(page: PDFPage, measurement: BurnMeasurement, pts: Pt[],
         drawFilledPath(page, pts, AREA_FILL_OPACITY);
         for (let i = 0; i < pts.length; i++) drawSegment(page, pts[i], pts[(i + 1) % pts.length]);
         drawLabel(page, centroid(pts), label, font);
+        return;
+    }
+
+    if (measurement.type === 'callout' && pts.length >= 2) {
+        drawCallout(page, pts[0], pts[1], calloutLines(measurement.text), font);
     }
 }
 
@@ -251,6 +262,90 @@ function drawLabel(page: PDFPage, anchor: Pt, label: string, font: PDFFont): voi
             color: rgb(0, 0, 0),
         });
     });
+}
+
+/**
+ * Bubble plate, leader and arrowhead for a detail callout.
+ *
+ * Page user space runs y-up while callout geometry is laid out y-down, so the
+ * anchors are negated on the way in, and the plate is drawn with the same
+ * translate-then-flip trick as drawPolygon: path coordinates are relative to
+ * the plate's top-left corner, in SVG's y-down convention.
+ */
+function drawCallout(page: PDFPage, tip: Pt, anchor: Pt, lines: string[], font: PDFFont): void {
+    if (lines.length === 0) return;
+
+    const metrics: CalloutMetrics = {
+        fontSize: MEASURE_STYLE.printCalloutFontSize,
+        lineHeight: MEASURE_STYLE.calloutLineHeight,
+        paddingX: MEASURE_STYLE.calloutPaddingX,
+        paddingY: MEASURE_STYLE.calloutPaddingY,
+        measureText: (text: string, size: number) => font.widthOfTextAtSize(text, size),
+    };
+    const flip = (p: Pt): Pt => ({ x: p.x, y: -p.y });
+
+    const box = bubbleBox(flip(anchor), lines, metrics);
+    const start = flip(leaderStart(box, flip(tip)));
+    const dir = unitVector(start, tip);
+    if (dir) {
+        drawSegment(page, start, tip);
+        drawArrow(page, tip, dir);
+    }
+
+    page.drawSvgPath(roundedRectPath(box.width, box.height, MEASURE_STYLE.calloutRadius), {
+        x: box.left,
+        y: -box.top,
+        color: rgb(1, 1, 1),
+        opacity: 0.9,
+        borderColor: BURN_COLOR,
+        borderWidth: MEASURE_STYLE.calloutBorderWidth,
+        borderOpacity: BURN_OPACITY,
+    });
+
+    const lineHeight = metrics.fontSize * metrics.lineHeight;
+    lines.forEach((line, index) => {
+        const width = metrics.measureText(line, metrics.fontSize);
+        page.drawText(line, {
+            x: box.left + (box.width - width) / 2,
+            y: -(box.top + metrics.paddingY + index * lineHeight + metrics.fontSize * LABEL_BASELINE),
+            size: metrics.fontSize,
+            font,
+            color: rgb(0, 0, 0),
+        });
+    });
+}
+
+/** Rounded rectangle in SVG path syntax, authored y-down from its top-left. */
+function roundedRectPath(width: number, height: number, radius: number): string {
+    const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+    if (r === 0) {
+        return 'M 0 0 L ' + num(width) + ' 0 L ' + num(width) + ' ' + num(height) + ' L 0 ' + num(height) + ' Z';
+    }
+    // Control-point offset for a quarter circle, 4/3 * tan(pi/8).
+    const c = r * 0.5522847498307936;
+    return [
+        'M ' + num(r) + ' 0',
+        'L ' + num(width - r) + ' 0',
+        'C ' + num(width - r + c) + ' 0 ' + num(width) + ' ' + num(r - c) + ' ' + num(width) + ' ' + num(r),
+        'L ' + num(width) + ' ' + num(height - r),
+        'C ' +
+            num(width) +
+            ' ' +
+            num(height - r + c) +
+            ' ' +
+            num(width - r + c) +
+            ' ' +
+            num(height) +
+            ' ' +
+            num(width - r) +
+            ' ' +
+            num(height),
+        'L ' + num(r) + ' ' + num(height),
+        'C ' + num(r - c) + ' ' + num(height) + ' 0 ' + num(height - r + c) + ' 0 ' + num(height - r),
+        'L 0 ' + num(r),
+        'C 0 ' + num(r - c) + ' ' + num(r - c) + ' 0 ' + num(r) + ' 0',
+        'Z',
+    ].join(' ');
 }
 
 function unitVector(from: Pt, to: Pt): Pt | null {

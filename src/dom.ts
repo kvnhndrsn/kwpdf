@@ -70,6 +70,7 @@ export let calibrateScaleBtn: HTMLElement | null = null;
 export let measureDistBtn: HTMLElement | null = null;
 export let measurePerimBtn: HTMLElement | null = null;
 export let measureAreaBtn: HTMLElement | null = null;
+export let measureCalloutBtn: HTMLElement | null = null;
 export let clearMeasureBtn: HTMLElement | null = null;
 export let savePdfBtn: HTMLElement | null = null;
 export let scaleInput: HTMLInputElement | null = null;
@@ -148,6 +149,7 @@ export function init(): void {
     measureDistBtn = document.getElementById('measureDistBtn');
     measurePerimBtn = document.getElementById('measurePerimBtn');
     measureAreaBtn = document.getElementById('measureAreaBtn');
+    measureCalloutBtn = document.getElementById('measureCalloutBtn');
     clearMeasureBtn = document.getElementById('clearMeasureBtn');
     savePdfBtn = document.getElementById('savePdfBtn');
     scaleInput = document.getElementById('scaleInput') as HTMLInputElement | null;

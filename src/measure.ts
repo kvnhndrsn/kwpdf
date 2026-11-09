@@ -1,14 +1,15 @@
 import { state } from './state';
 import * as dom from './dom';
 import { MEASURE_STYLE } from './measure-style';
+import { bubbleBox, calloutLines, leaderStart } from './callout';
 
 // ── state ──
 
-/** @type {'distance'|'polyline'|'area'|null} */
+/** @type {'distance'|'polyline'|'area'|'callout'|null} */
 let activeTool = null;
 /** @type {number} the ratio in "1:{scaleRatio}" */
 let scaleRatio = 100;
-/** @type {Object<string, Array<{id:string, type:string, points:Array, label:string, areaMm2?:number}>>} */
+/** @type {Object<string, Array<{id:string, type:string, points:Array, label:string, text?:string, areaMm2?:number}>>} */
 let measurementsByDoc = {};
 /** @type {Array<{page:number, x:number, y:number}>} */
 let pendingPoints = [];
@@ -25,6 +26,13 @@ let isCalibrating = false;
 let calibrationMeters = 0;
 /** @type {{page:number, x:number, y:number}|null} first clicked point during calibration */
 let calibrationPoint = null;
+
+/** @type {string|null} callout whose bubble text is being edited */
+let editingCalloutId = null;
+/** Text as typed in the open editor, kept across re-renders. */
+let editingDraftText = '';
+/** Text the open editor started from, so Escape can restore it. */
+let editingPreviousText = '';
 
 const STORAGE_KEY = 'kwpdf_measurements';
 const SCALE_STORAGE_KEY = 'kwpdf_measure_scale';
@@ -249,7 +257,7 @@ export function getActiveTool() {
     return activeTool;
 }
 
-/** @param {'distance'|'polyline'|'area'} tool */
+/** @param {'distance'|'polyline'|'area'|'callout'} tool */
 export function activateTool(tool) {
     if (isCalibrating) cancelCalibration();
     if (activeTool === tool) {
@@ -269,6 +277,7 @@ export function activateTool(tool) {
 }
 
 export function deactivateTool() {
+    if (editingCalloutId) commitCalloutEdit();
     activeTool = null;
     pendingPoints = [];
     previewLine = null;
@@ -278,7 +287,7 @@ export function deactivateTool() {
         isMouseListening = false;
     }
     dom.viewerScroll.classList.remove('is-measuring');
-    ['measureDistBtn', 'measurePerimBtn', 'measureAreaBtn'].forEach((id) => {
+    ['measureDistBtn', 'measurePerimBtn', 'measureAreaBtn', 'measureCalloutBtn'].forEach((id) => {
         const btn = document.getElementById(id);
         if (btn) btn.classList.remove('active-tool');
     });
@@ -356,6 +365,10 @@ export function cancelCalibration() {
 export function deleteMeasurement(id) {
     const url = getDocKey();
     if (!url || !measurementsByDoc[url]) return;
+    if (editingCalloutId === id) {
+        editingCalloutId = null;
+        editingDraftText = '';
+    }
     measurementsByDoc[url] = measurementsByDoc[url].filter((m) => m.id !== id);
     saveMeasurements();
     markCommittedDirty();
@@ -402,6 +415,8 @@ export function onPageClick(e) {
         handlePerimeterClick(pt);
     } else if (activeTool === 'area') {
         handlePerimeterClick(pt);
+    } else if (activeTool === 'callout') {
+        handleCalloutClick(pt);
     }
 }
 
@@ -424,6 +439,46 @@ function handleDistanceClick(coords) {
         pendingPoints.push(coords);
         finalizeDistance();
     }
+}
+
+// ── detail callouts ──
+
+/** @param {{page:number, x:number, y:number}} coords */
+function handleCalloutClick(coords) {
+    if (pendingPoints.length === 0) {
+        pendingPoints.push(coords);
+        activePageNum = coords.page;
+        renderAllMeasurements();
+        return;
+    }
+
+    if (pendingPoints[0].page !== coords.page) {
+        // Same rule as distance: a second click on another page restarts.
+        pendingPoints = [coords];
+        activePageNum = coords.page;
+        renderAllMeasurements();
+        return;
+    }
+
+    finalizeCallout(pendingPoints[0], coords);
+}
+
+/** @param {{page:number, x:number, y:number}} tip @param {{page:number, x:number, y:number}} bubble */
+function finalizeCallout(tip, bubble) {
+    const url = getDocKey();
+    if (!url) return;
+    if (!measurementsByDoc[url]) measurementsByDoc[url] = [];
+
+    const id = generateId();
+    measurementsByDoc[url].push({ id, type: 'callout', points: [tip, bubble], label: '', text: '' });
+
+    pendingPoints = [];
+    previewLine = null;
+    activePageNum = null;
+    // The bubble is deliberately not persisted here: it only becomes a
+    // measurement once its editor is committed with some text.
+    markCommittedDirty();
+    startCalloutEdit(id);
 }
 
 function generateId() {
@@ -681,7 +736,7 @@ function clearMeasurementOverlays() {
 
 function clearPreview() {
     document
-        .querySelectorAll('.measure-line-ghost, .measure-label-ghost, .measure-fill-ghost')
+        .querySelectorAll('.measure-line-ghost, .measure-label-ghost, .measure-fill-ghost, .measure-callout-ghost')
         .forEach((el) => el.remove());
 }
 
@@ -703,7 +758,7 @@ function renderBase() {
     }
 
     if (pendingPoints.length > 0 && activePageNum) {
-        if (activeTool === 'distance') {
+        if (activeTool === 'distance' || activeTool === 'callout') {
             renderPendingPoint();
         } else if ((activeTool === 'perimeter' || activeTool === 'area') && pendingPoints.length >= 2) {
             renderPendingPerimeter();
@@ -746,6 +801,8 @@ function renderMeasurement(m) {
         renderPerimeter(m.points, m.label, false, m.id);
     } else if (m.type === 'area') {
         renderArea(m.points, m.label, false, m.id);
+    } else if (m.type === 'callout') {
+        renderCallout(m.points[0], m.points[1], m.text || '', m.id);
     }
 }
 
@@ -1068,6 +1125,312 @@ function renderArea(points, label, isPreview, measId) {
     }
 }
 
+// ── callout rendering and editing ──
+
+/** Canvas used only to measure text in the on-screen bubble font. */
+let _calloutMeasureCtx = null;
+
+/** @param {string} text @param {number} size */
+function screenTextWidth(text, size) {
+    if (!_calloutMeasureCtx) {
+        const canvas = document.createElement('canvas');
+        _calloutMeasureCtx = canvas.getContext('2d');
+    }
+    if (!_calloutMeasureCtx) return text.length * size * 0.55;
+    _calloutMeasureCtx.font = size + 'px InterVariable, sans-serif';
+    return _calloutMeasureCtx.measureText(text).width;
+}
+
+/** Bubble metrics at the current zoom: the bubble is part of the drawing. */
+function calloutMetrics(s) {
+    return {
+        fontSize: MEASURE_STYLE.calloutFontPx * s,
+        lineHeight: MEASURE_STYLE.calloutLineHeight,
+        // The plate's border sits inside its box, so reserve it as padding.
+        paddingX: (MEASURE_STYLE.calloutPaddingX + MEASURE_STYLE.calloutBorderWidth) * s,
+        paddingY: (MEASURE_STYLE.calloutPaddingY + MEASURE_STYLE.calloutBorderWidth) * s,
+        measureText: screenTextWidth,
+    };
+}
+
+/** @param {Event} e */
+function stopCalloutEvent(e) {
+    e.stopPropagation();
+}
+
+/** @param {string} id */
+function findMeasurement(id) {
+    const url = getDocKey();
+    if (!url) return null;
+    return (measurementsByDoc[url] || []).find((m) => m.id === id) || null;
+}
+
+/** Position the leader, arrowhead and plate of one callout (screen pixels). */
+function layoutCallout(group, tipX, tipY, anchorX, anchorY, lines, s) {
+    const metrics = calloutMetrics(s);
+    const box = bubbleBox({ x: anchorX, y: anchorY }, lines, metrics);
+    const start = leaderStart(box, { x: tipX, y: tipY });
+
+    const dx = tipX - start.x;
+    const dy = tipY - start.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+    const leader = group.querySelector('.measure-callout-leader');
+    if (leader) {
+        leader.style.display = len > 0.5 ? '' : 'none';
+        if (len > 0.5) {
+            const weight = Math.max(1, MEASURE_STYLE.leaderWidth * s);
+            leader.style.left = start.x + 'px';
+            leader.style.top = start.y - weight / 2 + 'px';
+            leader.style.width = len + 'px';
+            leader.style.height = weight + 'px';
+            leader.style.transform = 'rotate(' + angle + 'deg)';
+        }
+    }
+
+    const arrow = group.querySelector('.measure-callout-arrow');
+    if (arrow) {
+        arrow.style.display = len > 0.5 ? '' : 'none';
+        if (len > 0.5) {
+            arrow.style.left = tipX - 10 + 'px';
+            arrow.style.top = tipY - 7 + 'px';
+            arrow.style.transform = 'rotate(' + angle + 'deg)';
+        }
+    }
+
+    const bubble = group.querySelector('.measure-callout');
+    if (bubble) {
+        bubble.style.left = box.left + 'px';
+        bubble.style.top = box.top + 'px';
+        bubble.style.width = box.width + 'px';
+        bubble.style.height = box.height + 'px';
+        bubble.style.padding = metrics.paddingY + 'px ' + metrics.paddingX + 'px';
+        bubble.style.fontSize = metrics.fontSize + 'px';
+        bubble.style.lineHeight = String(metrics.lineHeight);
+        bubble.style.borderRadius = MEASURE_STYLE.calloutRadius * s + 'px';
+        bubble.style.borderWidth = Math.max(1, MEASURE_STYLE.calloutBorderWidth * s) + 'px';
+    }
+}
+
+/** @param {string} [measId] */
+function createCalloutArrow(measId) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '12');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('class', 'measure-callout-arrow');
+    svg.style.transformOrigin = '10px 7px';
+    if (measId) svg.dataset.measId = measId;
+
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', '10,7 0,0 0,14');
+    poly.setAttribute('fill', FINAL_COLOR);
+    if (measId) poly.dataset.measId = measId;
+    svg.appendChild(poly);
+    return svg;
+}
+
+function renderCallout(tip, anchor, text, measId) {
+    const pageEl = getPageEl(anchor.page);
+    if (!pageEl) return;
+    const s = state.currentScale || 1;
+    const layer = getOrCreateLayer(pageEl);
+    const editing = !!measId && measId === editingCalloutId;
+    const lines = calloutLines(editing ? editingDraftText : text);
+    if (!editing && lines.length === 0) return;
+
+    const group = document.createElement('div');
+    group.className = 'measure-callout-group';
+    if (measId) group.dataset.measId = measId;
+
+    const leader = document.createElement('div');
+    leader.className = 'measure-line m-line measure-callout-leader';
+    leader.style.background = FINAL_COLOR;
+    if (measId) leader.dataset.measId = measId;
+    group.appendChild(leader);
+    group.appendChild(createCalloutArrow(measId));
+
+    const bubble = document.createElement('div');
+    bubble.className = 'measure-callout';
+    bubble.style.borderColor = FINAL_COLOR;
+    if (editing) bubble.classList.add('is-editing');
+    if (measId) bubble.dataset.measId = measId;
+
+    if (editing) {
+        const editor = document.createElement('textarea');
+        editor.className = 'measure-callout-editor';
+        editor.value = editingDraftText;
+        editor.placeholder = 'Note';
+        editor.rows = 1;
+        editor.spellcheck = false;
+        editor.setAttribute('aria-label', 'Callout text');
+        editor.addEventListener('pointerdown', stopCalloutEvent);
+        editor.addEventListener('click', stopCalloutEvent);
+        editor.addEventListener('input', () => {
+            editingDraftText = editor.value;
+            layoutCallout(group, tip.x * s, tip.y * s, anchor.x * s, anchor.y * s, calloutLines(editingDraftText), s);
+        });
+        editor.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                commitCalloutEdit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelCalloutEdit();
+            }
+        });
+        editor.addEventListener('blur', () => {
+            if (editingCalloutId === measId) commitCalloutEdit();
+        });
+        bubble.appendChild(editor);
+
+        requestAnimationFrame(() => {
+            if (!editor.isConnected) return;
+            editor.focus();
+            const end = editor.value.length;
+            editor.setSelectionRange(end, end);
+        });
+    } else {
+        const span = document.createElement('span');
+        span.className = 'measure-callout-text';
+        span.textContent = lines.join('\n');
+        bubble.appendChild(span);
+
+        if (measId) {
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'measure-callout-remove';
+            remove.textContent = '\u00D7';
+            remove.title = 'Delete callout';
+            remove.setAttribute('aria-label', 'Delete callout');
+            remove.addEventListener('pointerdown', stopCalloutEvent);
+            remove.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteMeasurement(measId);
+            });
+            bubble.appendChild(remove);
+        }
+
+        bubble.addEventListener('pointerdown', (e) => beginCalloutDrag(e, measId, anchor));
+        bubble.addEventListener('click', stopCalloutEvent);
+    }
+
+    group.appendChild(bubble);
+    layer.appendChild(group);
+    layoutCallout(group, tip.x * s, tip.y * s, anchor.x * s, anchor.y * s, lines, s);
+}
+
+/** Drag a bubble; a press that never moves is a click to re-edit the text. */
+function beginCalloutDrag(e, measId, anchor) {
+    if (!measId || editingCalloutId) return;
+    const m = findMeasurement(measId);
+    if (!m) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const originX = anchor.x;
+    const originY = anchor.y;
+    let moved = false;
+
+    const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+        moved = true;
+        const s = state.currentScale || 1;
+        m.points[1] = { page: anchor.page, x: originX + dx / s, y: originY + dy / s };
+        markCommittedDirty();
+        renderAllMeasurements();
+    };
+
+    const finish = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+        document.body.classList.remove('is-moving-callout');
+        if (!moved) {
+            startCalloutEdit(measId);
+            return;
+        }
+        saveMeasurements();
+        markCommittedDirty();
+        renderAllMeasurements();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    document.body.classList.add('is-moving-callout');
+}
+
+/** Open the text editor on a callout bubble. @param {string} measId */
+export function startCalloutEdit(measId) {
+    const m = findMeasurement(measId);
+    if (!m || m.type !== 'callout') return;
+    editingPreviousText = m.text || '';
+    editingDraftText = editingPreviousText;
+    editingCalloutId = measId;
+    markCommittedDirty();
+    renderAllMeasurements();
+}
+
+export function isEditingCallout() {
+    return !!editingCalloutId;
+}
+
+/** Keep whatever is in the open editor. */
+export function commitCalloutEdit() {
+    if (!editingCalloutId) return;
+    const editor = document.querySelector('.measure-callout-editor');
+    const value = editor instanceof HTMLTextAreaElement ? editor.value : editingDraftText;
+    finishCalloutEdit(value);
+}
+
+/** Abandon the edit, restoring the text the bubble had before it opened. */
+export function cancelCalloutEdit() {
+    if (!editingCalloutId) return;
+    finishCalloutEdit(editingPreviousText);
+}
+
+/** @param {string} value */
+function finishCalloutEdit(value) {
+    const id = editingCalloutId;
+    if (!id) return;
+    editingCalloutId = null;
+    editingDraftText = '';
+
+    const url = getDocKey();
+    const list = url ? measurementsByDoc[url] : null;
+    const m = list ? list.find((item) => item.id === id) : null;
+    if (!m) {
+        markCommittedDirty();
+        renderAllMeasurements();
+        return;
+    }
+
+    const text = calloutLines(value).join('\n');
+    if (text) {
+        m.text = text;
+    } else {
+        const restored = calloutLines(editingPreviousText).join('\n');
+        if (restored) {
+            m.text = restored;
+        } else if (list) {
+            // A bubble that never received text is not a measurement.
+            measurementsByDoc[url] = list.filter((item) => item.id !== id);
+        }
+    }
+
+    saveMeasurements();
+    markCommittedDirty();
+    renderAllMeasurements();
+}
+
 function renderCalibrationPendingPoint() {
     if (!calibrationPoint) return;
     const p = calibrationPoint;
@@ -1165,6 +1528,16 @@ function renderPreviewLine() {
                     addGhostLabel(layer, (cx + 6) * s, (cy + 20) * s, 'Total area: ' + formatArea(totalAreaMm2));
                 }
             }
+        } else if (activeTool === 'callout') {
+            const metrics = calloutMetrics(s);
+            const box = bubbleBox({ x: mouse.x * s, y: mouse.y * s }, [], metrics);
+            const ghost = document.createElement('div');
+            ghost.className = 'measure-callout-ghost';
+            ghost.style.left = box.left + 'px';
+            ghost.style.top = box.top + 'px';
+            ghost.style.width = box.width + 'px';
+            ghost.style.height = box.height + 'px';
+            layer.appendChild(ghost);
         } else {
             const real = realWorldMm(distanceBetween(last, mouse));
             addGhostLabel(layer, ((last.x + mouse.x) / 2) * s, ((last.y + mouse.y) / 2) * s, formatLength(real));
