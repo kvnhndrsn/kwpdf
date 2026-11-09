@@ -736,7 +736,7 @@ input, select, button, textarea {
     padding-right: 12px;
 }
 
-#measureDistBtn, #measurePerimBtn, #measureAreaBtn, #savePdfBtn {
+#measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn {
     min-width: 34px;
     padding: 5px 12px;
 }
@@ -1126,6 +1126,67 @@ input, select, button, textarea {
 .measure-line-ghost { position: absolute; pointer-events: none; z-index: 5; border-top: 2px dashed rgba(0, 200, 255, 0.85); height: 0; background: none; transform-origin: 0 50%; }
 .measure-label-ghost { position: absolute; font-size: 15px; background: rgba(255,255,255,0.3); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); padding: 1px 5px; border-radius: 3px; z-index: 7; white-space: nowrap; font-family: 'InterVariable', sans-serif; border: 1px solid rgba(0, 200, 255, 0.5); pointer-events: auto; color: #000; }
 .measure-fill-ghost { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; background: rgba(0, 200, 255, 0.12); }
+/* Detail callout bubbles: a rounded plate on a leader with an arrowhead. */
+.measure-callout-group { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
+.measure-callout-leader { pointer-events: none; z-index: 5; }
+.measure-callout-arrow { position: absolute; overflow: visible; pointer-events: none; z-index: 6; }
+.measure-callout {
+    position: absolute;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid;
+    border-radius: 5px;
+    color: #000;
+    font-family: 'InterVariable', sans-serif;
+    text-align: center;
+    white-space: pre;
+    overflow: visible;
+    cursor: grab;
+    pointer-events: auto;
+    z-index: 7;
+}
+.measure-callout.is-editing { cursor: text; }
+.measure-callout-text { display: block; overflow: hidden; }
+.measure-callout-editor {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: center;
+    resize: none;
+    overflow: hidden;
+}
+.measure-callout-remove {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    background: #fff;
+    color: #000;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+.measure-callout:hover .measure-callout-remove { display: flex; }
+.measure-callout-ghost { position: absolute; border: 2px dashed rgba(0, 200, 255, 0.85); border-radius: 5px; pointer-events: none; z-index: 7; }
+body.is-moving-callout { cursor: grabbing; user-select: none; }
+
 .measure-highlight {
     transition: all 0.15s ease;
     filter: saturate(1.5) brightness(1.1) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
