@@ -1,7 +1,7 @@
 import { state } from './state';
 import * as dom from './dom';
 import { getCurrentDocMeasurements } from './measure';
-import { burnMeasurementsIntoPdf, measuredFileName } from './measure-burn';
+import { burnMeasurementsIntoPdf, measuredFileName, measuredPageFileName } from './measure-burn';
 
 /** True while a save is in flight, so the toolbar can disable its button. */
 let saving = false;
@@ -99,36 +99,27 @@ function describeError(err: any): string {
     return 'Could not save the measured PDF: ' + message;
 }
 
-/**
- * Burn the open PDF's measurements into a copy of the file.
- *
- * The source file is never touched: this always writes a new `-measured.pdf`.
- * Returns silently when there is nothing to do (no PDF open, or no
- * measurements), so the caller only has to refresh the toolbar afterwards.
- */
-export async function savePdfWithMeasurements(): Promise<void> {
-    if (saving) return;
+interface SaveJob {
+    url: string;
+    pdfDoc: any;
+    measurements: any[];
+    name: string;
+    onlyPage?: number;
+}
 
-    const url = state.currentDocUrl;
-    const pdfDoc = state.pdfDoc;
-    if (!url || !pdfDoc || state.currentDocType !== 'pdf') return;
-
-    const measurements = getCurrentDocMeasurements().slice();
-    if (measurements.length === 0) {
-        setStatus('No measurements to save');
-        return;
-    }
-
-    const name = measuredFileName(state.docDataCache[url]?.name || 'document.pdf');
+/** Shared burn-and-write path for the whole-document and single-page saves. */
+async function writeMeasuredPdf(job: SaveJob): Promise<void> {
+    const { url, pdfDoc, measurements, name, onlyPage } = job;
 
     saving = true;
-    setStatus('Writing measurements into ' + name + '...');
+    setStatus((onlyPage === undefined ? 'Writing measurements into ' : 'Writing this page into ') + name + '...');
     try {
         const bytes = await readSourceBytes(url);
         const result = await burnMeasurementsIntoPdf({
             bytes,
             measurements,
             getPage: pageMapperFor(pdfDoc),
+            ...(onlyPage === undefined ? {} : { onlyPage }),
         });
 
         // The document may have been swapped mid-write; never write bytes for
@@ -156,4 +147,62 @@ export async function savePdfWithMeasurements(): Promise<void> {
     } finally {
         saving = false;
     }
+}
+
+/**
+ * Burn the open PDF's measurements into a copy of the file.
+ *
+ * The source file is never touched: this always writes a new `-measured.pdf`.
+ * Returns silently when there is nothing to do (no PDF open, or no
+ * measurements), so the caller only has to refresh the toolbar afterwards.
+ */
+export async function savePdfWithMeasurements(): Promise<void> {
+    if (saving) return;
+
+    const url = state.currentDocUrl;
+    const pdfDoc = state.pdfDoc;
+    if (!url || !pdfDoc || state.currentDocType !== 'pdf') return;
+
+    const measurements = getCurrentDocMeasurements().slice();
+    if (measurements.length === 0) {
+        setStatus('No measurements to save');
+        return;
+    }
+
+    await writeMeasuredPdf({
+        url,
+        pdfDoc,
+        measurements,
+        name: measuredFileName(state.docDataCache[url]?.name || 'document.pdf'),
+    });
+}
+
+/**
+ * Write a one-page PDF of the page in view, with only that page's
+ * measurements burned in. The page keeps its size, rotation and crop box, so
+ * the saved sheet plots the same as the one on screen.
+ */
+export async function savePageWithMeasurements(): Promise<void> {
+    if (saving) return;
+
+    const url = state.currentDocUrl;
+    const pdfDoc = state.pdfDoc;
+    if (!url || !pdfDoc || state.currentDocType !== 'pdf') return;
+
+    const pageNum = state.currentPage;
+    if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > state.totalPages) return;
+
+    const measurements = getCurrentDocMeasurements().filter((m) => m?.points?.[0]?.page === pageNum);
+    if (measurements.length === 0) {
+        setStatus('No measurements on this page to save');
+        return;
+    }
+
+    await writeMeasuredPdf({
+        url,
+        pdfDoc,
+        measurements,
+        name: measuredPageFileName(state.docDataCache[url]?.name || 'document.pdf', pageNum),
+        onlyPage: pageNum,
+    });
 }

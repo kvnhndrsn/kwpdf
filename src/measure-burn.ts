@@ -34,6 +34,8 @@ export interface BurnInput {
     bytes: Uint8Array | ArrayBuffer;
     measurements: BurnMeasurement[];
     getPage: (pageNum: number) => PageMapper | null | Promise<PageMapper | null>;
+    /** Keep only this 1-based page (and its measurements) in the output. */
+    onlyPage?: number;
 }
 
 export interface BurnResult {
@@ -74,6 +76,21 @@ export function measuredFileName(name: string): string {
 }
 
 /**
+ * `drawing.pdf`, page 3 → `drawing-p3-measured.pdf`.
+ *
+ * A page copy of an already measured file must not stack suffixes, so both the
+ * page suffix and a plain `-measured` are stripped before one is added back.
+ */
+export function measuredPageFileName(name: string, pageNum: number): string {
+    const base = String(name || 'document')
+        .replace(/\.pdf$/i, '')
+        .replace(/[\\/]+$/, '')
+        .replace(/-p\d+-measured$/i, '')
+        .replace(/-measured$/i, '');
+    return base + '-p' + pageNum + '-measured.pdf';
+}
+
+/**
  * Draw committed measurements into a copy of `bytes`.
  *
  * Everything is drawn in PDF user space: the caller's mapper turns the stored
@@ -82,9 +99,30 @@ export function measuredFileName(name: string): string {
  * offset when it draws.
  */
 export async function burnMeasurementsIntoPdf(input: BurnInput): Promise<BurnResult> {
-    const doc = await PDFDocument.load(input.bytes, { updateMetadata: false });
-    const font = await doc.embedFont(StandardFonts.Helvetica);
+    let doc = await PDFDocument.load(input.bytes, { updateMetadata: false });
     const pageCount = doc.getPageCount();
+    const onlyPage = Number.isInteger(input.onlyPage) ? (input.onlyPage as number) : null;
+
+    // A single-page copy keeps the page object itself, so its media box, crop
+    // box, rotation and resources survive exactly as they were.
+    if (onlyPage !== null && (onlyPage < 1 || onlyPage > pageCount)) {
+        return {
+            bytes: input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes),
+            drawn: 0,
+            skippedPages: [onlyPage],
+        };
+    }
+    if (onlyPage !== null) {
+        for (let index = pageCount - 1; index >= 0; index--) {
+            if (index !== onlyPage - 1) doc.removePage(index);
+        }
+        // pdf-lib's removePage updates the page tree but not the document's
+        // page cache, so getPage() would still hand back a removed page and
+        // the drawing would be lost. Reloading the pruned bytes rebuilds it.
+        doc = await PDFDocument.load(await doc.save({ useObjectStreams: true }), { updateMetadata: false });
+    }
+
+    const font = await doc.embedFont(StandardFonts.Helvetica);
 
     const mappers = new Map<number, PageMapper | null>();
     const skippedPages = new Set<number>();
@@ -97,6 +135,8 @@ export async function burnMeasurementsIntoPdf(input: BurnInput): Promise<BurnRes
         if (measurement.type === 'callout' && calloutLines(measurement.text).length === 0) continue;
         const pageNum = points[0]?.page;
 
+        // A single-page save carries only that page's annotations.
+        if (onlyPage !== null && pageNum !== onlyPage) continue;
         if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pageCount) {
             skippedPages.add(pageNum);
             continue;
@@ -108,7 +148,7 @@ export async function burnMeasurementsIntoPdf(input: BurnInput): Promise<BurnRes
             continue;
         }
 
-        const page = doc.getPage(pageNum - 1);
+        const page = doc.getPage(onlyPage !== null ? 0 : pageNum - 1);
         const box = page.getMediaBox();
         const toPage = (p: BurnPoint): Pt => {
             const user = mapper.toUserSpace(p.x, p.y);

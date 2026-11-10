@@ -690,9 +690,13 @@ export function updateToolbarState() {
     (dom.measureCalloutBtn as HTMLButtonElement).disabled = !hasDoc;
     (dom.clearMeasureBtn as HTMLButtonElement).disabled = !document.querySelector('.measure-line');
     (dom.scaleInput as HTMLInputElement).disabled = !hasDoc;
-    // A PDF to write into, at least one measurement, and no save in flight.
-    (dom.savePdfBtn as HTMLButtonElement).disabled =
-        !hasPdf || burnSave.isSavingPdf() || measure.getCurrentDocMeasurements().length === 0;
+    // Saves need a PDF, at least one measurement, and no save already running.
+    // The page save additionally needs a measurement on the page in view.
+    const docMeasurements = measure.getCurrentDocMeasurements();
+    const canSave = hasPdf && !burnSave.isSavingPdf() && docMeasurements.length > 0;
+    (dom.savePdfBtn as HTMLButtonElement).disabled = !canSave;
+    (dom.savePageBtn as HTMLButtonElement).disabled =
+        !canSave || !docMeasurements.some((m: any) => m?.points?.[0]?.page === state.currentPage);
 }
 
 export function goToMatch(index) {
@@ -972,6 +976,12 @@ export function setupEventListeners() {
         // The save sets its busy flag synchronously, so this disables the
         // button before the first await and re-enables it once the write is done.
         const pending = burnSave.savePdfWithMeasurements();
+        updateToolbarState();
+        await pending;
+        updateToolbarState();
+    });
+    dom.savePageBtn?.addEventListener('click', async () => {
+        const pending = burnSave.savePageWithMeasurements();
         updateToolbarState();
         await pending;
         updateToolbarState();

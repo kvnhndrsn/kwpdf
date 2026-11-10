@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
-import { burnMeasurementsIntoPdf, measuredFileName } from '../measure-burn';
+import { burnMeasurementsIntoPdf, measuredFileName, measuredPageFileName } from '../measure-burn';
 import { calloutShape } from '../callout';
 
 /**
@@ -64,8 +64,8 @@ const mappers = {
     3: mapperFrom(CROPPED),
 };
 
-function burn(bytes, measurements, getPage = (pageNum) => mappers[pageNum] || null) {
-    return burnMeasurementsIntoPdf({ bytes, measurements, getPage });
+function burn(bytes, measurements, getPage = (pageNum) => mappers[pageNum] || null, onlyPage) {
+    return burnMeasurementsIntoPdf({ bytes, measurements, getPage, onlyPage });
 }
 
 describe('measuredFileName', () => {
@@ -79,6 +79,18 @@ describe('measuredFileName', () => {
     it('falls back to a usable name', () => {
         expect(measuredFileName('')).toBe('document-measured.pdf');
         expect(measuredFileName(undefined)).toBe('document-measured.pdf');
+    });
+});
+
+describe('measuredPageFileName', () => {
+    it('names the copy after the page', () => {
+        expect(measuredPageFileName('drawing.pdf', 3)).toBe('drawing-p3-measured.pdf');
+        expect(measuredPageFileName('Drawing.PDF', 1)).toBe('Drawing-p1-measured.pdf');
+    });
+
+    it('does not stack suffixes on a repeat save', () => {
+        expect(measuredPageFileName('drawing-measured.pdf', 2)).toBe('drawing-p2-measured.pdf');
+        expect(measuredPageFileName('drawing-p2-measured.pdf', 2)).toBe('drawing-p2-measured.pdf');
     });
 });
 
@@ -338,5 +350,79 @@ describe('burnMeasurementsIntoPdf', () => {
         } finally {
             await pdf.destroy();
         }
+    });
+
+    it('keeps only the requested page and its measurements', async () => {
+        const bytes = await makeSourcePdf();
+        const result = await burn(
+            bytes,
+            [
+                {
+                    type: 'distance',
+                    points: [
+                        { page: 1, x: 20, y: 30 },
+                        { page: 1, x: 120, y: 30 },
+                    ],
+                    label: 'kept on page one',
+                },
+                {
+                    type: 'distance',
+                    points: [
+                        { page: 3, x: 20, y: 30 },
+                        { page: 3, x: 120, y: 30 },
+                    ],
+                    label: 'dropped page three',
+                },
+            ],
+            undefined,
+            1,
+        );
+
+        expect(result.drawn).toBe(1);
+        const doc = await PDFDocument.load(result.bytes);
+        expect(doc.getPageCount()).toBe(1);
+        expect(doc.getPage(0).getSize()).toEqual({ width: 200, height: 300 });
+
+        const content = contentOf(doc, 0);
+        expect(content).toContain(hexOf('kept on page one'));
+        expect(content).not.toContain(hexOf('dropped page three'));
+        expect(content).toContain(hexOf('original'));
+    });
+
+    it('maps measurements onto the kept page whatever its original number', async () => {
+        const bytes = await makeSourcePdf();
+        const result = await burn(
+            bytes,
+            [
+                {
+                    type: 'distance',
+                    points: [
+                        { page: 3, x: 0, y: 0 },
+                        { page: 3, x: 100, y: 50 },
+                    ],
+                    label: 'cropped page only',
+                },
+            ],
+            undefined,
+            3,
+        );
+
+        expect(result.drawn).toBe(1);
+        const doc = await PDFDocument.load(result.bytes);
+        expect(doc.getPageCount()).toBe(1);
+        const content = contentOf(doc, 0);
+        // The crop-box mapper still applies: viewport (0,0) is PDF (20,300).
+        expect(content).toContain('20 300 m');
+        expect(content).toContain(hexOf('cropped page only'));
+    });
+
+    it('leaves the file alone when the requested page does not exist', async () => {
+        const bytes = await makeSourcePdf();
+        const result = await burn(bytes, [], undefined, 9);
+
+        expect(result.drawn).toBe(0);
+        expect(result.skippedPages).toEqual([9]);
+        const doc = await PDFDocument.load(result.bytes);
+        expect(doc.getPageCount()).toBe(3);
     });
 });
