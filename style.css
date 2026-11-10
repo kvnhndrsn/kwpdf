@@ -688,6 +688,11 @@ input, select, button, textarea {
     flex-shrink: 1;
 }
 
+/* The save pair lives on one row, so centre it in the toolbar's height. */
+.viewer-toolbar .toolbar-output {
+    justify-content: center;
+}
+
 
 .viewer-toolbar .separator {
     color: var(--grey-500);
@@ -736,9 +741,14 @@ input, select, button, textarea {
     padding-right: 12px;
 }
 
-#measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn {
+#measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn, #savePageBtn {
     min-width: 34px;
     padding: 5px 12px;
+}
+
+#savePdfBtn svg, #savePageBtn svg {
+    display: block;
+    margin: 0 auto;
 }
 
 #clearMeasureBtn {
