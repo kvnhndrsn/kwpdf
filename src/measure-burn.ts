@@ -58,10 +58,6 @@ const AREA_FILL_OPACITY = 0.15;
 export const CALLOUT_FILL_OPACITY = 0.8;
 /** Arrowheads are fills, so they get the same see-through treatment. */
 const ARROW_OPACITY = 0.8;
-const LABEL_BACKGROUND_OPACITY = 0.75;
-const LABEL_PADDING_X = 5;
-const LABEL_PADDING_Y = 2;
-const LABEL_LINE_HEIGHT = 1.2;
 const LABEL_BASELINE = 0.8;
 
 /**
@@ -280,11 +276,11 @@ function drawLabel(page: PDFPage, anchor: Pt, label: string, font: PDFFont): voi
     const lines = label.split('\n').filter((line) => line.length > 0);
     if (lines.length === 0) return;
 
-    const size = MEASURE_STYLE.printLabelFontSize;
-    const lineHeight = size * LABEL_LINE_HEIGHT;
+    const size = MEASURE_STYLE.labelFontPx;
+    const lineHeight = size * MEASURE_STYLE.labelLineHeight;
     const widths = lines.map((line) => font.widthOfTextAtSize(line, size));
-    const boxWidth = Math.max(...widths) + LABEL_PADDING_X * 2;
-    const boxHeight = lines.length * lineHeight + LABEL_PADDING_Y * 2;
+    const boxWidth = Math.max(...widths) + MEASURE_STYLE.labelPaddingX * 2;
+    const boxHeight = lines.length * lineHeight + MEASURE_STYLE.labelPaddingY * 2;
 
     const left = anchor.x + MEASURE_STYLE.labelOffsetX;
     const top = anchor.y + MEASURE_STYLE.labelOffsetY;
@@ -295,16 +291,16 @@ function drawLabel(page: PDFPage, anchor: Pt, label: string, font: PDFFont): voi
         width: boxWidth,
         height: boxHeight,
         color: rgb(1, 1, 1),
-        opacity: LABEL_BACKGROUND_OPACITY,
+        opacity: MEASURE_STYLE.labelBackgroundOpacity,
         borderColor: BURN_COLOR,
         borderOpacity: BURN_OPACITY,
-        borderWidth: 0.75,
+        borderWidth: MEASURE_STYLE.labelBorderWidth,
     });
 
     lines.forEach((line, index) => {
         page.drawText(line, {
-            x: left + LABEL_PADDING_X,
-            y: top - LABEL_PADDING_Y - size * LABEL_BASELINE - index * lineHeight,
+            x: left + MEASURE_STYLE.labelPaddingX,
+            y: top - MEASURE_STYLE.labelPaddingY - size * LABEL_BASELINE - index * lineHeight,
             size,
             font,
             color: rgb(0, 0, 0),

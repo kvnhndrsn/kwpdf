@@ -817,19 +817,46 @@ function renderMeasurement(m) {
 
 // ── label helper ──
 
+/**
+ * Type, padding and border of a label at the current zoom. Labels are part of
+ * the drawing, so these scale with zoom exactly like the printed label's
+ * points do; the committed and preview labels share the same metrics.
+ */
+function applyLabelMetrics(el, s) {
+    el.style.fontSize = MEASURE_STYLE.labelFontPx * s + 'px';
+    el.style.lineHeight = String(MEASURE_STYLE.labelLineHeight);
+    el.style.padding = MEASURE_STYLE.labelPaddingY * s + 'px ' + MEASURE_STYLE.labelPaddingX * s + 'px';
+    el.style.borderWidth = MEASURE_STYLE.labelBorderWidth * s + 'px';
+}
+
 /** @param {number} x @param {number} y @param {string} color @param {string} text @param {string} [measId] */
 function createLabel(x, y, color, text, measId) {
+    const s = state.currentScale || 1;
     const lbl = document.createElement('div');
     lbl.className = 'measure-label';
-    lbl.style.left = x + 6 + 'px';
-    lbl.style.top = y - 10 + 'px';
+    lbl.style.left = x + MEASURE_STYLE.labelOffsetX * s + 'px';
+    lbl.style.top = y - MEASURE_STYLE.labelOffsetY * s + 'px';
     lbl.style.color = '#000';
     lbl.style.borderColor = color;
+    lbl.style.background = 'rgba(255, 255, 255, ' + MEASURE_STYLE.labelBackgroundOpacity + ')';
+    applyLabelMetrics(lbl, s);
+
+    // Same text as the saved label; the delete control is an overlay so it
+    // cannot make the screen label wider than the printed one.
+    lbl.innerHTML = text.replace(/\n/g, '<br>');
     if (measId) {
-        const shortText = text.split(' @ ')[0];
-        lbl.innerHTML = shortText.replace(/\n/g, '<br>') + '  \u00D7';
         lbl.title = text + '\nClick to delete';
         lbl.style.cursor = 'pointer';
+        const remove = document.createElement('span');
+        remove.className = 'measure-label-remove';
+        remove.textContent = '\u00D7';
+        remove.title = 'Delete measurement';
+        remove.setAttribute('aria-hidden', 'true');
+        remove.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteMeasurement(measId);
+        });
+        lbl.appendChild(remove);
         lbl.addEventListener('click', (e) => {
             e.stopPropagation();
             deleteMeasurement(measId);
@@ -845,8 +872,6 @@ function createLabel(x, y, color, text, measId) {
                 .querySelectorAll('[data-meas-id="' + escapedMeasId + '"]')
                 .forEach((el) => el.classList.remove('measure-highlight'));
         });
-    } else {
-        lbl.textContent = text;
     }
     return lbl;
 }
@@ -1571,10 +1596,12 @@ function drawGhostSegment(layer, p1, p2, s) {
 }
 
 function addGhostLabel(layer, x, y, text) {
+    const s = state.currentScale || 1;
     const lbl = document.createElement('div');
     lbl.className = 'measure-label-ghost';
-    lbl.style.left = x + 6 + 'px';
-    lbl.style.top = y - 10 + 'px';
+    lbl.style.left = x + MEASURE_STYLE.labelOffsetX * s + 'px';
+    lbl.style.top = y - MEASURE_STYLE.labelOffsetY * s + 'px';
+    applyLabelMetrics(lbl, s);
     lbl.innerHTML = text.replace(/\n/g, '<br>');
     layer.appendChild(lbl);
 }

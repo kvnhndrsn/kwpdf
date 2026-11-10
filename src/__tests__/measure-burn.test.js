@@ -119,6 +119,8 @@ describe('burnMeasurementsIntoPdf', () => {
         expect(content).toContain('20 270 m');
         expect(content).toContain('120 270 l');
         expect(content).toContain(hexOf('1.00 m @ 1:100'));
+        // The printed label uses the same size the screen draws at 100% zoom.
+        expect(content).toContain('12 Tf');
         // Untouched original content survives the rewrite.
         expect(content).toContain(hexOf('original'));
     });

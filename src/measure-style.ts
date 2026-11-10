@@ -6,9 +6,10 @@
  * point, so the same numbers are meaningful in both places. Keeping them here
  * means an exported drawing cannot drift away from what the app showed.
  *
- * The two sizes that are deliberately *not* shared are the label sizes: the
- * on-screen label is a fixed 15px piece of UI, while the printed label is 9pt,
- * because a fixed 15px label would come out as ~5mm text on paper.
+ * Labels are part of the drawing, not UI chrome: the on-screen label uses the
+ * same size in CSS pixels at 100% zoom as the printed label uses in points,
+ * and the screen size scales with zoom. 12 is the compromise between the old
+ * 15px screen label and 9pt print label, so neither side jumps on export.
  */
 export const MEASURE_STYLE = {
     red: 1,
@@ -27,9 +28,13 @@ export const MEASURE_STYLE = {
     arrowLength: 10,
     arrowWidth: 14,
 
-    /** Label geometry, matching `.measure-label` (font-size + padding + offset). */
-    labelFontPx: 15,
-    printLabelFontSize: 9,
+    /** Label geometry, shared by `.measure-label` and the PDF text. */
+    labelFontPx: 12,
+    labelLineHeight: 1.2,
+    labelPaddingX: 5,
+    labelPaddingY: 2,
+    labelBorderWidth: 0.75,
+    labelBackgroundOpacity: 0.75,
     labelOffsetX: 6,
     labelOffsetY: 10,
 
