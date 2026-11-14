@@ -74,6 +74,10 @@ export let measureCalloutBtn: HTMLElement | null = null;
 export let clearMeasureBtn: HTMLElement | null = null;
 export let savePdfBtn: HTMLElement | null = null;
 export let savePageBtn: HTMLElement | null = null;
+export let zoomMenuBtn: HTMLElement | null = null;
+export let zoomMenu: HTMLElement | null = null;
+export let moreMenuBtn: HTMLElement | null = null;
+export let moreMenu: HTMLElement | null = null;
 export let scaleInput: HTMLInputElement | null = null;
 export let progressBar: HTMLElement | null = null;
 
@@ -154,6 +158,10 @@ export function init(): void {
     clearMeasureBtn = document.getElementById('clearMeasureBtn');
     savePdfBtn = document.getElementById('savePdfBtn');
     savePageBtn = document.getElementById('savePageBtn');
+    zoomMenuBtn = document.getElementById('zoomMenuBtn');
+    zoomMenu = document.getElementById('zoomMenu');
+    moreMenuBtn = document.getElementById('moreMenuBtn');
+    moreMenu = document.getElementById('moreMenu');
     scaleInput = document.getElementById('scaleInput') as HTMLInputElement | null;
     progressBar = document.getElementById('progressBarFill');
 }

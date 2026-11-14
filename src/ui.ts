@@ -884,6 +884,36 @@ function setupLastFolderUI() {
     });
 }
 
+/**
+ * Wire a toolbar popover: the toggle opens it, and an outside click, Escape or
+ * choosing one of its items closes it. The items stay in the DOM while the menu
+ * is closed, so the disabled flags `updateToolbarState()` sets still apply.
+ */
+function setupToolbarMenu(toggle: HTMLElement | null, menu: HTMLElement | null) {
+    if (!toggle || !menu) return;
+    const wrap = toggle.parentElement as HTMLElement;
+    const setOpen = (open: boolean) => {
+        wrap.classList.toggle('open', open);
+        toggle.setAttribute('aria-expanded', String(open));
+    };
+    toggle.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+        setOpen(!wrap.classList.contains('open'));
+    });
+    menu.addEventListener('click', (e: Event) => {
+        if ((e.target as HTMLElement).closest('button')) setOpen(false);
+    });
+    document.addEventListener('click', (e: Event) => {
+        if (!wrap.contains(e.target as Node)) setOpen(false);
+    });
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Escape' && wrap.classList.contains('open')) {
+            setOpen(false);
+            toggle.focus();
+        }
+    });
+}
+
 export function setupEventListeners() {
     window.addEventListener('resize', checkMobileLayout);
     initResultsPanel();
@@ -910,6 +940,8 @@ export function setupEventListeners() {
             : 'No saved text cache to clear';
     });
     dom.mobileToggleBtn?.addEventListener('click', toggleMobileSidebar);
+    setupToolbarMenu(dom.zoomMenuBtn, dom.zoomMenu);
+    setupToolbarMenu(dom.moreMenuBtn, dom.moreMenu);
 
     /* Settings menu buttons */
     dom.settingsKwBtn?.addEventListener('click', () => {
