@@ -622,33 +622,24 @@ input, select, button, textarea {
 
 /* ── Viewer Toolbar ── */
 
+/*
+ * One flat row of control groups divided by hairlines. Groups keep their
+ * natural width and wrap onto another line rather than shrinking, clipping or
+ * scrolling, so no control can end up unreachable at a narrow window width.
+ */
 .viewer-toolbar {
     display: flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: 12px;
-    padding: 0 14px;
-    height: 68px;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px 2px;
+    padding: 6px 12px;
+    min-height: 48px;
     background: var(--grey-900);
     color: var(--text-overlay);
-    z-index: 10;
+    z-index: 40;
     flex-shrink: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--grey-400) transparent;
     border-bottom: 1px solid var(--grey-700);
-}
-
-.viewer-toolbar::-webkit-scrollbar {
-    height: 4px;
-}
-.viewer-toolbar::-webkit-scrollbar-track {
-    background: transparent;
-}
-.viewer-toolbar::-webkit-scrollbar-thumb {
-    background: var(--grey-400);
-    border-radius: 4px;
 }
 
 .toolbar-section {
@@ -666,31 +657,26 @@ input, select, button, textarea {
 
 .viewer-toolbar .toolbar-section {
     display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 3px 10px;
-    border-radius: 8px;
-    height: 100%;
-    overflow: hidden;
-}
-
-.viewer-toolbar .toolbar-row {
-    display: flex;
     align-items: center;
-    gap: 5px;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
+    gap: 4px;
+    height: auto;
+    padding: 0 10px;
+    border: none;
+    border-radius: 0;
 }
 
-.viewer-toolbar .toolbar-row > * {
-    min-width: 0;
-    flex-shrink: 1;
+.viewer-toolbar .toolbar-section:first-child {
+    padding-left: 0;
 }
 
-/* The save pair is stacked, one per row, like the other toolbar groups. */
-.viewer-toolbar .toolbar-output .toolbar-row {
-    justify-content: center;
+/* The save group sits at the far right while everything still fits on one row. */
+.viewer-toolbar .toolbar-section:last-child {
+    padding-right: 0;
+    margin-left: auto;
+}
+
+.viewer-toolbar .toolbar-section + .toolbar-section {
+    border-left: 1px solid var(--overlay-border);
 }
 
 
@@ -702,11 +688,90 @@ input, select, button, textarea {
     user-select: none;
 }
 
+/* ── Toolbar popover menus ── */
+
+.toolbar-menu {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+}
+
+.toolbar-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.menu-caret {
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 4px solid currentColor;
+    opacity: 0.5;
+}
+
+.toolbar-menu-list {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    min-width: 178px;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px;
+    background: var(--grey-800);
+    border: 1px solid var(--grey-600);
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.toolbar-menu.open .toolbar-menu-list {
+    display: flex;
+}
+
+/* Right-hand menus open inwards so they cannot leave the viewport. */
+.toolbar-output .toolbar-menu-list {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+
+.toolbar-menu-list button {
+    display: flex;
+    width: 100%;
+    min-height: 30px;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 5px 8px;
+    background: transparent;
+    color: var(--grey-200);
+    text-align: left;
+}
+
+.toolbar-menu-list button:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+}
+
+/* The save on the bar is an ordinary toolbar button, just a touch bolder. */
+.viewer-toolbar #savePageBtn {
+    font-weight: 550;
+    padding: 6px 12px;
+}
+
 .viewer-toolbar button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     background: var(--overlay);
     border: none;
     color: var(--text-overlay);
-    padding: 5px 9px;
+    min-height: 30px;
+    padding: 6px 10px;
     border-radius: 5px;
     cursor: pointer;
     font-size: 0.82rem;
@@ -736,14 +801,9 @@ input, select, button, textarea {
     padding-right: 16px;
 }
 
-#zoomFitBtn, #zoomActualBtn {
-    padding-left: 12px;
-    padding-right: 12px;
-}
-
 #measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn, #savePageBtn {
     min-width: 34px;
-    padding: 5px 12px;
+    padding: 6px 10px;
 }
 
 #savePdfBtn svg, #savePageBtn svg {
@@ -882,7 +942,8 @@ input, select, button, textarea {
     border: 1px solid var(--overlay-border);
     border-radius: 5px;
     padding: 1px 3px 1px 8px;
-    max-height: 26px;
+    min-height: 30px;
+    max-height: 30px;
     box-sizing: border-box;
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
@@ -908,7 +969,7 @@ input, select, button, textarea {
     font-size: 0.85rem;
     outline: none;
     min-width: 60px;
-    width: 90px;
+    width: 110px;
 }
 
 .inline-search-input::placeholder {
@@ -959,6 +1020,53 @@ input, select, button, textarea {
 }
 .viewer-toolbar .toolbar-keyword > .toolbar-row {
     overflow: visible;
+}
+
+/* ── Toolbar at narrow widths ── */
+
+/*
+ * These come after the toolbar rules they adjust: they carry the same
+ * specificity, so source order is what makes them win.
+ */
+
+@media (max-width: 1100px) {
+    .viewer-toolbar {
+        padding: 6px 10px;
+    }
+    .viewer-toolbar .toolbar-section {
+        padding: 0 8px;
+    }
+}
+
+@media (max-width: 980px) {
+    .viewer-toolbar .toolbar-section:last-child {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 600px) {
+    .viewer-toolbar {
+        gap: 6px 0;
+        padding: 6px 8px;
+    }
+    .viewer-toolbar .toolbar-section {
+        padding: 0 7px;
+        gap: 3px;
+    }
+    .viewer-toolbar button {
+        min-width: 34px;
+        min-height: 34px;
+        padding: 7px 9px;
+    }
+    .viewer-toolbar #savePageBtn .btn-label {
+        display: none;
+    }
+    .inline-search-input {
+        width: 84px;
+    }
+    .keyword-select {
+        max-width: 96px;
+    }
 }
 
 /* ── PDF Viewer ── */
