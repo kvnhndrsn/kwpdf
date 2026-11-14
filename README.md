@@ -2,14 +2,14 @@
 
 A document viewer for PDF and DOCX files that automatically scans documents against a keyword list and lets you quickly jump between matches.
 
-<img src="https://kvnhndrsn.github.io/projects/kwpdf.gif" height="480">
+<img src="docs/demo.gif" alt="Scanning a PDF in kwpdf, stepping through the keyword matches and filtering by keyword" width="880">
 
 ## Features
 
 - **Keyword scanning** — documents are searched against a pre-defined keyword list on open
 - **Global search & cross-file navigation** — search and jump between matches across all loaded files
 - **Measurement tools** — calibrated distance, perimeter, and area measurements on PDF pages
-- **ZIP file support** — drag and drop zip file right from file explorer, email or browser downloads 
+- **ZIP file support** — drag and drop zip file right from file explorer, email or browser downloads
 - **OCR support** (beta) — extract text from scanned PDFs via Tesseract.js
 
 ## Getting Started
@@ -41,6 +41,8 @@ PDF, DOCX, and ZIP archives (folders inside an archive are walked too). Legacy
 | `npm run typecheck` | `tsc --noEmit`, then the stricter `tsconfig.strict.json` project |
 | `npm test` | Vitest, single run |
 | `npm run bench` | Vitest benchmarks (`src/__tests__/perf.bench.js`) |
+| `npm run lint` | ESLint over the repository |
+| `npm run format` | Prettier over `src/`, `e2e/` and the root scripts |
 
 `npm run build` deletes `dist/` first, so anything you put there by hand is gone
 after a rebuild.
@@ -81,6 +83,7 @@ Edit `keywords.json` to define your own keyword lists before serving the page.
 - [PDF.js](https://mozilla.github.io/pdf.js/) — PDF rendering
 - [jszip](https://stuk.github.io/jszip/) — ZIP file support
 - [Mammoth.js](https://github.com/mwilliamson/mammoth.js/) — DOCX conversion
+- [pdf-lib](https://pdf-lib.js.org/) — writing measurements into saved PDFs
 - [Tesseract.js](https://tesseract.projectnaptha.com/) — OCR engine
 - [esbuild](https://esbuild.github.io/) — bundling
 
