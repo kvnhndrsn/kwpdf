@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kwpdf-0868d13c';
+const CACHE_NAME = 'kwpdf-16846719';
 const NETWORK_FIRST = ['/index.html', '/style.css', '/bundle.js'];
 const LOCAL_ASSETS = [
     './bundle.js',
@@ -21,8 +21,8 @@ const LOCAL_ASSETS = [
     // hash (worker-pool.js, ocr.ts), and a cache hit needs an exact URL, so the
     // precached entry carries the same query — that is what makes a rebuilt
     // worker script impossible to serve from an older cache.
-    './utils/doc_processor_worker.js?h=0868d13c',
-    './utils/ocr_worker.js?h=0868d13c',
+    './utils/doc_processor_worker.js?h=16846719',
+    './utils/ocr_worker.js?h=16846719',
 ];
 
 self.addEventListener('install', (event) => {
