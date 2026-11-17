@@ -159,7 +159,9 @@ export class CustomDropdown {
         this.menu.innerHTML = '';
         const options = [...this.select.options];
         if (options.length === 0) {
-            this.trigger.textContent = '';
+            // An empty trigger rendered as a tiny caret-only box, which reads
+            // as a broken control rather than "no keyword matches".
+            this.trigger.textContent = 'Keywords';
             this._appendArrow();
             this._updateDisabled();
             return;

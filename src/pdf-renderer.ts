@@ -227,7 +227,7 @@ function getViewportRange() {
     const scrollBottom = scrollTop + dom.viewerScroll.clientHeight;
     const viewH = dom.viewerScroll.clientHeight;
     const ranges = { visible: new Set(), near: new Set(), far: new Set() };
-    let top = 16;
+    let top = 0;
     for (let i = 1; i <= state.totalPages; i++) {
         const h = (state.pageHeights[i] || 800) * state.currentScale;
         const bottom = top + h;
@@ -239,7 +239,9 @@ function getViewportRange() {
         } else if (pageMid > scrollTop - viewH * 3 && pageMid < scrollBottom + viewH * 3) {
             ranges.far.add(i);
         }
-        top = bottom + 32;
+        // .pdf-page has margin:16px auto; adjacent vertical margins collapse to
+        // a single 16px gap, and the first margin collapses with the viewer.
+        top = bottom + 16;
     }
     return ranges;
 }
@@ -250,21 +252,21 @@ function getViewportRange() {
  * DOM twice per zoom step, which is a full document layout read on ctrl+wheel.
  */
 function findAnchorFromGeometry(viewportCenter: number): { page: number; offset: number } | null {
-    let top = 16;
+    let top = 0;
     for (let i = 1; i <= state.totalPages; i++) {
         const h = (state.pageHeights[i] || 800) * state.currentScale;
         const bottom = top + h;
         if (viewportCenter >= top && viewportCenter < bottom) {
             return { page: i, offset: Math.max(0, Math.min(1, (viewportCenter - top) / h)) };
         }
-        top = bottom + 32;
+        top = bottom + 16;
     }
     return null;
 }
 
 function pageTopAtScale(page: number, scale: number): number {
-    let top = 16;
-    for (let i = 1; i < page; i++) top += (state.pageHeights[i] || 800) * scale + 32;
+    let top = 0;
+    for (let i = 1; i < page; i++) top += (state.pageHeights[i] || 800) * scale + 16;
     return top;
 }
 
@@ -361,14 +363,14 @@ async function refreshVisiblePages() {
         // Cached page geometry instead of offsetTop/offsetHeight reads on every
         // page (500+ forced layout reads on each scroll stop).
         const visible = [];
-        let pageTop = 16;
+        let pageTop = 0;
         for (let i = 1; i <= state.totalPages; i++) {
             const pageH = (state.pageHeights[i] || 800) * state.currentScale;
             const bottom = pageTop + pageH;
             if (bottom > scrollTop && pageTop < scrollBottom) {
                 visible.push({ pn: i, dist: Math.abs((pageTop + bottom) / 2 - scrollCenter) });
             }
-            pageTop = bottom + 32;
+            pageTop = bottom + 16;
         }
         visible.sort((a, b) => a.dist - b.dist);
 

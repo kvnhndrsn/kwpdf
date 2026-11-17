@@ -88,13 +88,14 @@
 
 <div class="viewer-container">
     <div class="viewer-toolbar">
-        <div class="toolbar-section toolbar-page">
+      <div class="toolbar-row toolbar-row-nav">
+        <div class="toolbar-section toolbar-page" data-label="Page">
             <button id="prevPageBtn" title="Previous page" aria-label="Previous page">&#8592;</button>
             <input type="number" class="page-input small" id="pageInput" min="1" placeholder="0" title="Go to page (G)">
             <span class="dim">/ <span id="pageTotal">0</span></span>
             <button id="nextPageBtn" title="Next page" aria-label="Next page">&#8594;</button>
         </div>
-        <div class="toolbar-section toolbar-zoom">
+        <div class="toolbar-section toolbar-zoom" data-label="Zoom">
             <button id="zoomOutBtn" title="Zoom Out (Ctrl+-)" aria-label="Zoom Out (Ctrl+-)">-</button>
             <div class="toolbar-menu" id="zoomMenuWrap">
                 <button class="toolbar-menu-toggle" id="zoomMenuBtn" title="Zoom options" aria-label="Zoom options" aria-haspopup="true" aria-expanded="false">
@@ -108,21 +109,25 @@
             </div>
             <button id="zoomInBtn" title="Zoom In (Ctrl++)" aria-label="Zoom In (Ctrl++)">+</button>
         </div>
-        <div class="toolbar-section toolbar-keyword" id="navGroup">
+        <div class="toolbar-section toolbar-keyword" id="navGroup" data-label="Find">
             <select class="keyword-select small" id="keywordSelect" title="Keyword"></select>
             <div class="search-input-wrapper">
                 <span class="search-icon">&#8981;</span>
                 <input type="text" id="inlineSearchInput" class="inline-search-input" placeholder="Find..." title="Search (Ctrl+F)" autocomplete="off">
                 <button id="inlineSearchClear" class="inline-search-clear" title="Clear search" aria-label="Clear search" tabindex="-1">&#10005;</button>
             </div>
-            <span class="separator" id="navSep" style="display:none;">|</span>
-            <input type="number" class="match-input small" id="matchInput" min="1" placeholder="0" title="Go to match number">
-            <span class="dim">/ <span id="matchTotal">0</span></span>
-            <button id="findPrevBtn" title="Previous match" aria-label="Previous match">&#8592;</button>
-            <button id="findNextBtn" title="Next match" aria-label="Next match">&#8594;</button>
-            <button id="clearSearchBtn" class="nav-clear" title="Clear search" aria-label="Clear search">&#10005;</button>
+            <div class="match-nav">
+                <span class="separator" id="navSep" style="display:none;">|</span>
+                <input type="number" class="match-input small" id="matchInput" min="1" placeholder="0" title="Go to match number">
+                <span class="dim">/ <span id="matchTotal">0</span></span>
+                <button id="findPrevBtn" title="Previous match" aria-label="Previous match">&#8592;</button>
+                <button id="findNextBtn" title="Next match" aria-label="Next match">&#8594;</button>
+                <button id="clearSearchBtn" class="nav-clear" title="Clear search" aria-label="Clear search">&#10005;</button>
+            </div>
         </div>
-        <div class="toolbar-section toolbar-measure" id="measureSection">
+      </div>
+      <div class="toolbar-row toolbar-row-tools">
+        <div class="toolbar-section toolbar-measure" id="measureSection" data-label="Measure">
             <button id="calibrateScaleBtn" title="Calibrate scale (click two points on a known dimension)" aria-label="Calibrate scale (click two points on a known dimension)">&#9878;</button>
             <button id="measureDistBtn" title="Measure distance" aria-label="Measure distance">&#8597;</button>
             <button id="measurePerimBtn" title="Polyline (click points, dbl-click/Enter to finish)" aria-label="Polyline (click points, dbl-click/Enter to finish)">&#8629;</button>
@@ -135,7 +140,7 @@
             </button>
             <input type="text" class="scale-input small" id="scaleInput" value="1:100" placeholder="1:XXX" title="Scale 1:X">
         </div>
-        <div class="toolbar-section toolbar-output" id="outputSection">
+        <div class="toolbar-section toolbar-output" id="outputSection" data-label="Output">
             <div class="toolbar-menu" id="moreMenuWrap">
                 <button class="toolbar-menu-toggle" id="moreMenuBtn" title="More actions" aria-label="More actions" aria-haspopup="true" aria-expanded="false">&#8943;</button>
                 <div class="toolbar-menu-list" id="moreMenu" role="menu" aria-label="More actions">
@@ -152,6 +157,7 @@
                 <span class="btn-label">Save page</span>
             </button>
         </div>
+      </div>
     </div>
 
     <div class="viewer-scroll" id="viewerScroll">
