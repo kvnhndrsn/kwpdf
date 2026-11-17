@@ -33,47 +33,6 @@ installs a service worker that caches broken responses.
 PDF, DOCX, and ZIP archives (folders inside an archive are walked too). Legacy
 `.doc` is rejected — see the caveat below.
 
-### Scripts
-
-| Command | What it does |
-|---|---|
-| `npm run build` | Bundles into `dist/` (bundle, service worker, pdf.js worker, CMaps, standard fonts) |
-| `npm run typecheck` | `tsc --noEmit`, then the stricter `tsconfig.strict.json` project |
-| `npm test` | Vitest, single run |
-| `npm run bench` | Vitest benchmarks (`src/__tests__/perf.bench.js`) |
-| `npm run lint` | ESLint over the repository |
-| `npm run format` | Prettier over `src/`, `e2e/` and the root scripts |
-
-`npm run build` deletes `dist/` first, so anything you put there by hand is gone
-after a rebuild.
-
-## Caveats
-
-- **Keyword vs. ad-hoc search.** Keyword scans match whole words (`\bterm\b`), so
-  the keyword `cat` does not count `category`. The inline/global search box is a
-  plain substring search, so it does. The two totals can therefore differ for the
-  same text; this is intentional (see `src/__tests__/search-controller.test.js`).
-- **Keyword list failures are visible.** If `keywords.json` cannot be fetched the
-  app shows a banner with a Retry action instead of silently reporting no matches.
-- **Legacy `.doc` is not supported.** Mammoth only reads `.docx`; save binary
-  Word files as `.docx` first. Such files are rejected by their OLE2 header (or
-  `.doc` extension) with that message before they reach the tree, instead of
-  failing inside the parser.
-- **Password-protected PDFs.** Opening one on its own asks for the password and
-  says explicitly when it is wrong; cancelling leaves the document unopened. A
-  folder or ZIP scan has nobody to ask, so encrypted files are reported as
-  skipped (password-protected) instead of as failures. OCR does not prompt.
-- **OCR is self-hosted.** The Tesseract runtime, its wasm core and the eng
-  language data ship in `dist/tesseract/` (copied from the pinned
-  `tesseract.js`, `tesseract.js-core` and `@tesseract.js-data/eng` packages), so
-  OCR needs no CDN. The two small scripts are precached; the wasm cores and
-  language data (~11 MB, wasm inlined in the core scripts) are cached on first
-  OCR use, so the first run after a fresh install reads them from the app's own
-  origin and later runs work offline.
-- **Background tabs.** pdf.js renders through `requestAnimationFrame`, which is
-  paused in a hidden tab; a document opened while the tab is in the background
-  finishes loading when you return to it.
-
 ### Customizing Keywords
 
 Edit `keywords.json` to define your own keyword lists before serving the page.

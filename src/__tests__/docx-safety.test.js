@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from '../state';
 import * as dom from '../dom';
-import { renderDocHighlights } from '../docx-engine';
+import { renderDocHighlights, sanitizeDocHtml } from '../docx-engine';
 
 describe('DOCX highlight rendering', () => {
     beforeEach(() => {
@@ -26,5 +26,27 @@ describe('DOCX highlight rendering', () => {
         expect(window.__xss).toBeUndefined();
         expect(page.querySelector('mark.doc-highlight')?.textContent).toBe('tender');
         expect(page.textContent).toContain('<img src=x onerror');
+    });
+});
+
+describe('DOCX HTML sanitisation', () => {
+    it('removes scripts, event handlers and javascript URLs', () => {
+        const clean = sanitizeDocHtml(
+            '<p onclick="alert(1)">hi<a href="javascript:alert(1)">link</a>' +
+                '<script>alert(1)</script><img src=x onerror="alert(1)"></p>',
+        );
+
+        expect(clean).toContain('hi');
+        expect(clean).not.toMatch(/onclick|onerror|javascript:|<script/i);
+    });
+
+    it('keeps Mammoth-style markup and embedded images', () => {
+        const clean = sanitizeDocHtml(
+            '<h1>Title</h1><table><tr><td>tender</td></tr></table>' + '<img src="data:image/png;base64,iVBORw0KGgo=">',
+        );
+
+        expect(clean).toContain('<h1>Title</h1>');
+        expect(clean).toContain('<table>');
+        expect(clean).toContain('data:image/png;base64');
     });
 });

@@ -12,6 +12,7 @@ import { fn, KEYWORDS } from './cross';
 import { htmlToText } from './html-text';
 import { isLegacyDocFile, LEGACY_DOC_MESSAGE, getDocTypeFromUrl } from './file-handler';
 import { errorMessage } from './error-message';
+import DOMPurify from 'dompurify';
 
 state.searchCache = createSearchCache();
 state.docSearchResults = [];
@@ -25,21 +26,14 @@ state._docPageOffsets = null;
  * targets and (in malformed documents) event handlers or embedded tags are not
  * guaranteed to be safe. Sanitise once, before the HTML is stored or rendered,
  * so both the initial page render and the highlight restore use safe markup.
+ *
+ * DOMPurify is used rather than an attribute blacklist: it handles mutation
+ * XSS and the many URI-encoding tricks a hand-rolled filter misses. The HTML
+ * profile keeps Mammoth's markup (including data-URI images) while stripping
+ * SVG/MathML, which this viewer never needs.
  */
-function sanitizeDocHtml(html: string): string {
-    const parsed = new DOMParser().parseFromString(html, 'text/html');
-    parsed.querySelectorAll('script, iframe, object, embed, form, link, meta, base').forEach((el) => el.remove());
-    parsed.body.querySelectorAll('*').forEach((el) => {
-        for (const attr of Array.from(el.attributes)) {
-            const name = attr.name.toLowerCase();
-            const value = attr.value.trim().toLowerCase();
-            const isUrl = name === 'href' || name === 'src' || name === 'xlink:href' || name === 'action';
-            if (name.startsWith('on') || (isUrl && /^(javascript|vbscript|data):/.test(value))) {
-                el.removeAttribute(attr.name);
-            }
-        }
-    });
-    return parsed.body.innerHTML;
+export function sanitizeDocHtml(html: string): string {
+    return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } }) as string;
 }
 
 // Results per query for the current document. DOCX search reruns the whole
