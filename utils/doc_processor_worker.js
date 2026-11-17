@@ -83,8 +83,10 @@ function processRegexOnPDFCache(pages, keywords) {
 
             if (text) {
                 let match;
-                const regex = new RegExp(combinedRegex.source, 'gi');
-                while ((match = regex.exec(text)) !== null) {
+                // The cached regex is global; reset it instead of recompiling
+                // the combined pattern for every page.
+                combinedRegex.lastIndex = 0;
+                while ((match = combinedRegex.exec(text)) !== null) {
                     const key = normalizeKeywordMatch(match, canonical);
                     if (!key) continue;
                     counts[key] = (counts[key] || 0) + 1;
