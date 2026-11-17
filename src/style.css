@@ -623,53 +623,31 @@ input, select, button, textarea {
 /* ── Viewer Toolbar ── */
 
 /*
- * Instrument panel: two deliberate rows of labelled control groups, each on a
- * subtle raised surface. Groups keep their natural width and wrap inside their
- * row rather than shrinking or clipping, so no control is ever unreachable.
+ * Four control groups sit side by side, each two rows tall. This keeps every
+ * control on the bar without wrapping into a ragged extra line; at very narrow
+ * widths the bar scrolls sideways instead.
  */
 .viewer-toolbar {
     display: flex;
-    flex-direction: column;
     align-items: stretch;
-    gap: 7px;
-    padding: 8px 12px 9px;
-    /* Two rows are fixed; below the width where they fit, scroll sideways
-       rather than silently adding a third row. */
-    overflow-x: auto;
+    justify-content: center;
+    gap: 12px;
+    padding: 4px 14px;
+    min-height: 68px;
     background: var(--grey-900);
     color: var(--text-overlay);
-    z-index: 40;
+    z-index: 10;
     flex-shrink: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--grey-400) transparent;
     border-bottom: 1px solid var(--grey-700);
 }
 
-.toolbar-row {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 7px;
-    width: 100%;
-    min-width: 0;
-}
-
-/* Page and zoom keep their natural width; Find absorbs the spare space and
-   shrinks first, so the top row stays on one line at review-window widths. */
-.viewer-toolbar .toolbar-page,
-.viewer-toolbar .toolbar-zoom,
-.viewer-toolbar .toolbar-measure {
-    flex: 0 0 auto;
-}
-.viewer-toolbar .toolbar-keyword {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-.viewer-toolbar .search-input-wrapper {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-.custom-dropdown[data-for="keywordSelect"] {
-    flex: 0 0 auto;
-}
+.viewer-toolbar::-webkit-scrollbar { height: 4px; }
+.viewer-toolbar::-webkit-scrollbar-track { background: transparent; }
+.viewer-toolbar::-webkit-scrollbar-thumb { background: var(--grey-400); border-radius: 4px; }
 
 .toolbar-section {
     display: flex;
@@ -686,44 +664,27 @@ input, select, button, textarea {
 
 .viewer-toolbar .toolbar-section {
     display: flex;
-    align-items: center;
-    gap: 4px;
-    height: auto;
-    padding: 4px 9px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 3px 10px;
     border: 1px solid var(--grey-700);
     border-radius: 8px;
-    background: var(--grey-800);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    height: 100%;
+    overflow: hidden;
 }
 
-/* Tiny engraved-style label gives each cluster a purpose at a glance. */
-.viewer-toolbar .toolbar-section::before {
-    content: attr(data-label);
-    margin-right: 5px;
-    font-size: 9px;
-    line-height: 1;
-    font-weight: 650;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--grey-500);
-    white-space: nowrap;
-    pointer-events: none;
-}
-
-/* Actions stay at the far right of the tools row, including when it wraps. */
-.viewer-toolbar .toolbar-row-tools .toolbar-output {
-    margin-left: auto;
-}
-
-.viewer-toolbar .match-nav {
+.viewer-toolbar .toolbar-row {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 
-/* Match stepping only makes sense once there is a search to step through. */
-.viewer-toolbar .toolbar-keyword:not(.active) .match-nav {
-    display: none;
+.viewer-toolbar .toolbar-row > * {
+    min-width: 0;
+    flex-shrink: 1;
 }
 
 
@@ -806,7 +767,11 @@ input, select, button, textarea {
 /* The save on the bar is an ordinary toolbar button, just a touch bolder. */
 .viewer-toolbar #savePageBtn {
     font-weight: 550;
-    padding: 6px 12px;
+    padding: 6px 10px;
+}
+/* Two-row measure group has room for the icon but not the text label. */
+.viewer-toolbar #savePageBtn .btn-label {
+    display: none;
 }
 
 .viewer-toolbar button {
@@ -844,13 +809,18 @@ input, select, button, textarea {
 }
 
 #prevPageBtn, #nextPageBtn {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-left: 12px;
+    padding-right: 12px;
 }
 
-.toolbar-zoom > button {
-    padding-left: 8px;
-    padding-right: 8px;
+#zoomOutBtn, #zoomInBtn {
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+#zoomActualBtn, #zoomFitBtn {
+    padding-left: 12px;
+    padding-right: 12px;
 }
 
 #measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn, #savePageBtn {
@@ -1020,8 +990,8 @@ input, select, button, textarea {
     padding: 3px 4px;
     font-size: 0.85rem;
     outline: none;
-    min-width: 48px;
-    width: 100%;
+    min-width: 60px;
+    width: 90px;
 }
 
 .inline-search-input::placeholder {
@@ -1070,47 +1040,8 @@ input, select, button, textarea {
 .viewer-toolbar .toolbar-keyword {
     overflow: visible;
 }
-
-/* ── Toolbar at narrow widths ── */
-
-/*
- * These come after the toolbar rules they adjust: they carry the same
- * specificity, so source order is what makes them win.
- */
-
-@media (max-width: 1100px) {
-    .viewer-toolbar {
-        padding: 7px 10px 8px;
-    }
-    .viewer-toolbar .toolbar-section {
-        padding-left: 8px;
-        padding-right: 8px;
-    }
-}
-
-@media (max-width: 600px) {
-    .viewer-toolbar {
-        gap: 6px;
-        padding: 7px 8px 8px;
-    }
-    .viewer-toolbar .toolbar-section {
-        padding: 4px 7px;
-        gap: 3px;
-    }
-    .viewer-toolbar button {
-        min-width: 34px;
-        min-height: 34px;
-        padding: 7px 9px;
-    }
-    .viewer-toolbar #savePageBtn .btn-label {
-        display: none;
-    }
-    .inline-search-input {
-        min-width: 44px;
-    }
-    .keyword-select {
-        max-width: 96px;
-    }
+.viewer-toolbar .toolbar-keyword > .toolbar-row {
+    overflow: visible;
 }
 
 /* ── PDF Viewer ── */
@@ -2034,8 +1965,8 @@ body::before {
 /* ── Toolbar keyword select ── */
 
 .custom-dropdown[data-for="keywordSelect"] .custom-dropdown-trigger {
-    max-width: 96px;
-    min-width: 72px;
+    max-width: 132px;
+    min-width: 88px;
 }
 
 /* ── Mobile ── */
