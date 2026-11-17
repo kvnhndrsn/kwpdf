@@ -633,6 +633,9 @@ input, select, button, textarea {
     align-items: stretch;
     gap: 7px;
     padding: 8px 12px 9px;
+    /* Two rows are fixed; below the width where they fit, scroll sideways
+       rather than silently adding a third row. */
+    overflow-x: auto;
     background: var(--grey-900);
     color: var(--text-overlay);
     z-index: 40;
@@ -642,10 +645,30 @@ input, select, button, textarea {
 
 .toolbar-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 7px;
+    width: 100%;
     min-width: 0;
+}
+
+/* Page and zoom keep their natural width; Find absorbs the spare space and
+   shrinks first, so the top row stays on one line at review-window widths. */
+.viewer-toolbar .toolbar-page,
+.viewer-toolbar .toolbar-zoom,
+.viewer-toolbar .toolbar-measure {
+    flex: 0 0 auto;
+}
+.viewer-toolbar .toolbar-keyword {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.viewer-toolbar .search-input-wrapper {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.custom-dropdown[data-for="keywordSelect"] {
+    flex: 0 0 auto;
 }
 
 .toolbar-section {
@@ -821,8 +844,13 @@ input, select, button, textarea {
 }
 
 #prevPageBtn, #nextPageBtn {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+.toolbar-zoom > button {
+    padding-left: 8px;
+    padding-right: 8px;
 }
 
 #measureDistBtn, #measurePerimBtn, #measureAreaBtn, #measureCalloutBtn, #savePdfBtn, #savePageBtn {
@@ -841,7 +869,7 @@ input, select, button, textarea {
 
 .viewer-toolbar .zoom-level {
     font-size: 0.88rem;
-    min-width: 44px;
+    min-width: 38px;
     text-align: center;
     color: var(--grey-400);
     font-weight: 500;
@@ -992,8 +1020,8 @@ input, select, button, textarea {
     padding: 3px 4px;
     font-size: 0.85rem;
     outline: none;
-    min-width: 60px;
-    width: 110px;
+    min-width: 48px;
+    width: 100%;
 }
 
 .inline-search-input::placeholder {
@@ -1078,7 +1106,7 @@ input, select, button, textarea {
         display: none;
     }
     .inline-search-input {
-        width: 84px;
+        min-width: 44px;
     }
     .keyword-select {
         max-width: 96px;
@@ -2006,8 +2034,8 @@ body::before {
 /* ── Toolbar keyword select ── */
 
 .custom-dropdown[data-for="keywordSelect"] .custom-dropdown-trigger {
-    max-width: 132px;
-    min-width: 88px;
+    max-width: 96px;
+    min-width: 72px;
 }
 
 /* ── Mobile ── */
