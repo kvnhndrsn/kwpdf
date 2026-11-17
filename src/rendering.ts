@@ -1,7 +1,7 @@
-import { state } from './state';
+import { state, createKeywordCounts } from './state';
 import * as dom from './dom';
 import { fn, KEYWORDS } from './cross';
-import { fileDedupeKey, getFileIcon, getFileType } from './file-handler';
+import { fileDedupeKey, getFileIcon, getFileType, rememberDedupeKey } from './file-handler';
 import { keywordAt } from './keyword-index';
 
 let _loadDocument, _cycleSearch, _cycleDocSearch, _cycleAllKeywords, _cycleAllDocKeywords, _closeMobileSidebar;
@@ -69,16 +69,31 @@ export function setActiveCardFromUrl(url) {
     updateKeywordGrid(url);
 }
 
+/**
+ * Lightweight update for tree clicks: toggle the active row and refresh counts
+ * without destroying and rebuilding every node in a large library tree.
+ */
+export function refreshTreeState(): void {
+    document.querySelectorAll<HTMLElement>('.tree-file-item').forEach((li) => {
+        li.querySelector('.file')?.classList.toggle('active', li.dataset.url === state.currentDocUrl);
+    });
+    updateSidebarBadge();
+}
+
 /** Remember which dropped file this entry came from, so a re-drop is skipped. */
 function markDedupeKey(url, file) {
     const entry = state.docDataCache[url];
-    if (entry && file) entry._dedupeKey = fileDedupeKey(file);
+    if (entry && file) {
+        const key = fileDedupeKey(file);
+        entry._dedupeKey = key;
+        rememberDedupeKey(key, url);
+    }
 }
 
 export function renderPlaceholderCard(fileName, url, file) {
     const type = getFileType(fileName);
     const { name: baseName, folder } = getPathParts(file, null);
-    state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts: {}, url, type };
+    state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts: createKeywordCounts(), url, type };
     markDedupeKey(url, file);
     renderResultsArea();
 }
@@ -108,7 +123,7 @@ export function renderNoMatchCard(fileName, url, file) {
     const baseName = file ? getPathParts(file, null).name : existing?.name || fileName;
     const folder = file ? getPathParts(file, null).folder : existing?.folder || state.basePath || '';
     const type = getFileType(fileName);
-    const counts = {};
+    const counts = createKeywordCounts();
     state.docDataCache[url] = { name: baseName, folder, fullPath: fileName, counts, url, type };
 
     if (existing?._ocrCounts) {
@@ -225,14 +240,31 @@ function renderTree(node, path = '') {
             // the counts the scan reports.
             countSpan.textContent = String(totalMatches);
 
-            // The count used to load the file and cycle its matches one at a
-            // time. Review work needs the whole set, so it now opens the
-            // results panel scoped to this document; jumping is a row click.
-            countSpan.title = 'Show every match in this document';
+            // The count is a shortcut into this document's matches: on the open
+            // file it cycles them immediately, otherwise it loads the file first
+            // and cycles once the document is ready.
+            countSpan.title = 'Cycle through matches in this document';
             countSpan.addEventListener('click', function (e) {
                 e.stopPropagation();
-                _closeMobileSidebar();
-                fn.openResultsPanel?.(doc.url);
+
+                const onSameDoc = state.currentDocUrl === doc.url;
+
+                if (onSameDoc) {
+                    _closeMobileSidebar();
+                    if (doc.type === 'pdf') _cycleAllKeywords();
+                    else _cycleAllDocKeywords();
+                    refreshTreeState();
+                    return;
+                }
+
+                _loadDocument(doc.url);
+
+                whenDocReady(doc, () => {
+                    _closeMobileSidebar();
+                    if (doc.type === 'pdf') _cycleAllKeywords();
+                    else _cycleAllDocKeywords();
+                    refreshTreeState();
+                });
             });
 
             fileSpan.appendChild(countSpan);
@@ -294,37 +326,30 @@ function renderTree(node, path = '') {
                 _closeMobileSidebar();
                 if (doc.type === 'pdf') _cycleAllKeywords();
                 else _cycleAllDocKeywords();
-                renderResultsArea();
+                refreshTreeState();
                 return;
             }
 
             _loadDocument(doc.url);
             _closeMobileSidebar();
-            renderResultsArea();
+            refreshTreeState();
 
             if (state.globalSearchQuery) {
-                const tryActivate = () => {
-                    const isDocReady =
-                        doc.type === 'pdf'
-                            ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
-                            : !!state.docContentCache[doc.url];
-                    if (isDocReady) {
-                        state.globalSearchActiveDoc = doc.url;
-                        fn.activateGlobalSearch();
-                        const urls = Object.keys(state.globalSearchResults)
-                            .filter((u) => state.globalSearchResults[u] > 0)
-                            .sort((a, b) => {
-                                const na = (state.docDataCache[a]?.name || a).toLowerCase();
-                                const nb = (state.docDataCache[b]?.name || b).toLowerCase();
-                                return na.localeCompare(nb);
-                            });
-                        state._gsPos = urls.indexOf(doc.url);
-                        renderResultsArea();
-                    } else {
-                        setTimeout(tryActivate, 200);
-                    }
-                };
-                tryActivate();
+                // Bounded wait shared with the count/spinner paths: a document
+                // that never becomes ready must not leave a timer alive forever.
+                whenDocReady(doc, () => {
+                    state.globalSearchActiveDoc = doc.url;
+                    fn.activateGlobalSearch();
+                    const urls = Object.keys(state.globalSearchResults)
+                        .filter((u) => state.globalSearchResults[u] > 0)
+                        .sort((a, b) => {
+                            const na = (state.docDataCache[a]?.name || a).toLowerCase();
+                            const nb = (state.docDataCache[b]?.name || b).toLowerCase();
+                            return na.localeCompare(nb);
+                        });
+                    state._gsPos = urls.indexOf(doc.url);
+                    renderResultsArea();
+                });
             }
         });
         // The count spans stay mouse-only on purpose: they live inside the row

@@ -32,4 +32,15 @@ describe('countKeywordMatches', () => {
         expect(countKeywordMatches(['', ' '], ['tender'])).toEqual({ counts: {}, total: 0 });
         expect(countKeywordMatches([], ['tender'])).toEqual({ counts: {}, total: 0 });
     });
+
+    it('treats prototype-named keywords as ordinary keys', () => {
+        const { counts, total } = countKeywordMatches(
+            ['__proto__ constructor toString'],
+            ['__proto__', 'constructor', 'toString'],
+        );
+
+        expect(Object.getPrototypeOf(counts)).toBeNull();
+        expect(counts).toEqual({ ['__proto__']: 1, constructor: 1, toString: 1 });
+        expect(total).toBe(3);
+    });
 });

@@ -9,6 +9,8 @@ import { calloutLines, calloutShape } from './callout';
 let activeTool = null;
 /** @type {number} the ratio in "1:{scaleRatio}" */
 let scaleRatio = 100;
+/** True once the user has chosen a scale (toolbar or calibration). */
+let userScaleSet = false;
 /** @type {Object<string, Array<{id:string, type:string, points:Array, label:string, text?:string, areaMm2?:number}>>} */
 let measurementsByDoc = {};
 /** @type {Array<{page:number, x:number, y:number}>} */
@@ -36,6 +38,7 @@ let editingPreviousText = '';
 
 const STORAGE_KEY = 'kwpdf_measurements';
 const SCALE_STORAGE_KEY = 'kwpdf_measure_scale';
+const SCALE_USER_KEY = 'kwpdf_measure_scale_user';
 const MAX_SCALE = 10000000;
 
 // ── stable doc key (filenames persist across reloads, blob URLs don't) ──
@@ -76,6 +79,7 @@ function loadScale() {
             const parsed = parseFloat(raw);
             if (!isNaN(parsed) && parsed >= 0.001 && parsed <= MAX_SCALE) scaleRatio = parsed;
         }
+        userScaleSet = localStorage.getItem(SCALE_USER_KEY) === '1';
     } catch (e) {
         /* ignore */
     }
@@ -84,6 +88,7 @@ function loadScale() {
 function saveScale() {
     try {
         localStorage.setItem(SCALE_STORAGE_KEY, String(scaleRatio));
+        localStorage.setItem(SCALE_USER_KEY, userScaleSet ? '1' : '0');
     } catch (e) {
         /* ignore */
     }
@@ -241,12 +246,24 @@ function pageEventToPdfCoords(e) {
 
 // ── public API ──
 
-/** @param {number|string} value */
-export function setScale(value) {
+/** @param {number|string} value @param {boolean} user whether the user chose it */
+export function setScale(value, user = true) {
     const parsed = parseFloat(value);
     if (isNaN(parsed) || parsed < 0.001 || parsed > MAX_SCALE) return;
     scaleRatio = parsed;
+    if (user) userScaleSet = true;
     saveScale();
+}
+
+/**
+ * Apply a scale detected in a document only while the user has not chosen one.
+ * Auto-detection must never overwrite an explicit 1:50 with a document's 1:100.
+ */
+export function autoSetScale(value) {
+    if (userScaleSet) return false;
+    const before = scaleRatio;
+    setScale(value, false);
+    return scaleRatio !== before;
 }
 
 export function getScale() {

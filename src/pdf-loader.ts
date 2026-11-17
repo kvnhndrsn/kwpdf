@@ -1,11 +1,19 @@
-import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState, dropCachedDocument } from './state';
+import {
+    state,
+    beginDocGeneration,
+    isCurrentGeneration,
+    resetDocumentState,
+    dropCachedDocument,
+    createKeywordCounts,
+} from './state';
 import * as dom from './dom';
 import { fn, pdfjsLib, basePath } from './cross';
 import { evictCaches, getDocTypeFromUrl } from './file-handler';
-import { setScale, autoDetectScale } from './measure';
+import { autoSetScale, autoDetectScale } from './measure';
 import { processTextContentAsync } from './pdf-search';
 import { estimatePagesSize } from './cache-size';
 import { requestPassword } from './password-prompt';
+import { errorMessage } from './error-message';
 
 /** Pages extracted in parallel during load-time text extraction. */
 const EXTRACT_CONCURRENCY = 8;
@@ -52,7 +60,7 @@ function loadPDF(fileUrl, keyword = '') {
     fn.clearSearch();
     document.documentElement.style.setProperty('--pdf-scale', '1');
 
-    (async () => {
+    return (async () => {
         // Set when the user dismisses the password prompt, so the rejection that
         // destroying the loading task causes is reported as "password required"
         // rather than as a broken PDF.
@@ -203,7 +211,7 @@ function loadPDF(fileUrl, keyword = '') {
                 state._gsPageCacheReady = true;
 
                 // Populate sidebar keyword counts from search results
-                const counts = {};
+                const counts = createKeywordCounts();
                 for (const [kw, matches] of Object.entries(state.searchCache)) {
                     counts[kw] = matches.length;
                 }
@@ -218,8 +226,7 @@ function loadPDF(fileUrl, keyword = '') {
             // Auto-detect measurement scale from embedded metadata or page text
             const detected = await autoDetectScale(fileUrl);
             if (!isCurrentGeneration(generation)) return;
-            if (detected) {
-                setScale(detected);
+            if (detected && autoSetScale(detected)) {
                 const scaleInput = document.getElementById('scaleInput');
                 if (scaleInput) (scaleInput as HTMLInputElement).value = '1:' + detected;
                 fn.refreshAllMeasurements();
@@ -247,6 +254,7 @@ function loadPDF(fileUrl, keyword = '') {
             }
 
             if (keyword) fn.performSearch(keyword);
+            return true;
         } catch (err) {
             if (!isCurrentGeneration(generation)) return;
             if (passwordCancelled) {
@@ -255,12 +263,13 @@ function loadPDF(fileUrl, keyword = '') {
                 dom.loaderFilename.textContent = 'Password required';
                 dom.loaderStatus.textContent = 'This PDF is password-protected. Drop it again to enter the password.';
                 dom.loaderProgressFill.style.width = '0%';
-                return;
+                return false;
             }
             dom.loaderFilename.textContent = 'Error loading PDF';
-            dom.loaderStatus.textContent = err.message;
+            dom.loaderStatus.textContent = errorMessage(err);
             dom.loaderProgressFill.style.width = '0%';
             console.error('PDF load error:', err);
+            return false;
         }
     })();
 }
@@ -268,10 +277,10 @@ function loadPDF(fileUrl, keyword = '') {
 export function loadDocument(fileUrl, keyword) {
     const type = getDocTypeFromUrl(fileUrl);
     if (type === 'pdf') {
-        loadPDF(fileUrl, keyword);
-    } else if (type === 'docx' || type === 'doc') {
-        fn.loadDocxDoc(fileUrl, keyword);
-    } else {
-        loadPDF(fileUrl, keyword);
+        return loadPDF(fileUrl, keyword);
     }
+    if (type === 'docx' || type === 'doc') {
+        return fn.loadDocxDoc(fileUrl, keyword);
+    }
+    return loadPDF(fileUrl, keyword);
 }

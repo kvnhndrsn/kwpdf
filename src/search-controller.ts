@@ -8,7 +8,9 @@ import type {
 } from './types';
 import { projectItemBox, unionBoxes, sameTextLine, type ProjectedBox } from './pdf-coords';
 
+/** Cap the characters scanned in one frame, not just the number of documents. */
 const GS_CHUNK_SIZE = 20;
+const GS_CHUNK_CHARS = 250_000;
 
 /** How many distinct queries to remember per page cache. */
 const QUERY_CACHE_LIMIT = 12;
@@ -21,8 +23,11 @@ const queryResultCache = new WeakMap<object, Map<string, { revision: string; res
 function cacheRevision(textPageCache: Record<number, PageCacheEntry>, totalPages: number): string {
     let present = 0;
     let chars = 0;
-    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        const cached = textPageCache[pageNum];
+    // Walk the pages that exist instead of probing every page number up to
+    // `totalPages` (500 lookups for a sparse cache on every navigation). A
+    // for..in avoids allocating an array of values on this frequent path.
+    for (const key in textPageCache) {
+        const cached = textPageCache[key];
         if (!cached) continue;
         present++;
         chars += cached.text.length;
@@ -284,7 +289,10 @@ export function countMatchesInAllDocs(
             }
 
             const end = Math.min(idx + GS_CHUNK_SIZE, entries.length);
+            let charsThisChunk = 0;
             for (; idx < end; idx++) {
+                // Twenty tiny files is cheap; twenty 500-page PDFs is not.
+                if (charsThisChunk >= GS_CHUNK_CHARS) break;
                 const [url, doc] = entries[idx];
                 let text = '';
 
@@ -298,6 +306,7 @@ export function countMatchesInAllDocs(
                 }
 
                 if (text) {
+                    charsThisChunk += text.length;
                     regex.lastIndex = 0;
                     let count = 0;
                     while (regex.exec(text) !== null) count++;

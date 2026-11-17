@@ -1,9 +1,17 @@
-import { state } from './state';
+import { state, createKeywordCounts } from './state';
 import * as dom from './dom';
 import { pdfjsLib, KEYWORDS, basePath } from './cross';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 
 let ocrEnabled = true;
+
+/** Publish OCR failures instead of leaving a silent `error` state in the map. */
+function failOcr(url, message) {
+    ocrFileState.set(url, { status: 'error', texts: [], counts: createKeywordCounts(), totalMatches: 0 });
+    dom.statusBar.textContent = message;
+    state.emit('results-changed');
+}
+
 const ocrFileState = new Map();
 const workerCallbacks = new Map();
 const WORKER_POOL_SIZE = typeof navigator !== 'undefined' ? Math.min(navigator.hardwareConcurrency || 2, 4) : 2;
@@ -90,7 +98,7 @@ export function toggleOcrForFile(url) {
         ocrFileState.delete(url);
         const data = state.docDataCache[url];
         if (data && data._originalCounts) {
-            data.counts = { ...data._originalCounts };
+            data.counts = Object.assign(createKeywordCounts(), data._originalCounts);
             state.totalMatchesFound -= data._ocrTotalMatches || 0;
         }
         if (data) {
@@ -103,11 +111,10 @@ export function toggleOcrForFile(url) {
         return false;
     }
 
-    ocrFileState.set(url, { status: 'processing', texts: [], counts: {}, totalMatches: 0 });
+    ocrFileState.set(url, { status: 'processing', texts: [], counts: createKeywordCounts(), totalMatches: 0 });
     startOcrForFile(url).catch((err) => {
         console.error('[OCR] Error:', err);
-        ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
-        state.emit('results-changed');
+        failOcr(url, 'OCR failed for ' + (state.docDataCache[url]?.name || 'this document'));
     });
     state.emit('results-changed');
     return true;
@@ -238,22 +245,19 @@ async function processPageOnWorker(pdfDoc, pageNum, url, fileName, slot) {
 async function startOcrForFile(url) {
     const cacheEntry = state.docTextCache[url];
     if (!cacheEntry) {
-        ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
-        state.emit('results-changed');
+        failOcr(url, 'OCR needs the document text cache — reopen the file and try again');
         return;
     }
 
     const numPages = cacheEntry.totalPages || 0;
     if (!numPages) {
-        ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
-        state.emit('results-changed');
+        failOcr(url, 'OCR could not find any pages in this document');
         return;
     }
 
     const lowerName = (cacheEntry.fileName || '').toLowerCase();
     if (!lowerName.endsWith('.pdf')) {
-        ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
-        state.emit('results-changed');
+        failOcr(url, 'OCR is only available for PDF files');
         return;
     }
 
@@ -276,12 +280,14 @@ async function startOcrForFile(url) {
                 cMapPacked: true,
                 standardFontDataUrl: basePath + 'standard_fonts/',
                 isEvalSupported: false,
+                // There is nobody to ask in an OCR batch: fail fast so the
+                // catch path can report the file as skipped, not hang.
+                onPassword: () => null,
             }).promise;
         }
     } catch (err) {
         console.error('[OCR] Failed to load PDF for OCR:', err);
-        ocrFileState.set(url, { status: 'error', texts: [], counts: {}, totalMatches: 0 });
-        state.emit('results-changed');
+        failOcr(url, 'OCR could not open ' + (state.docDataCache[url]?.name || 'this document'));
         return;
     }
 
@@ -362,14 +368,9 @@ async function startOcrForFile(url) {
     // next, so leave it alone and publish nothing.
     if (resetEpoch !== ocrResetEpoch) return;
 
-    for (const slot of workerSlots) {
-        try {
-            slot.worker.terminate();
-        } catch (e) {
-            /* ignore */
-        }
-    }
-    workerSlots.length = 0;
+    // Keep the workers alive for the next file: each one pays a multi-second
+    // Tesseract wasm + language-data init, which was being repeated per file.
+    // resetOcrState() is the single place that tears the pool down.
 
     if (state.currentDocUrl !== url) {
         try {
@@ -381,9 +382,9 @@ async function startOcrForFile(url) {
 
     const keywords = KEYWORDS || [];
     const combinedRegex = getKeywordRegex(keywords);
-    const counts = {};
+    const counts = createKeywordCounts();
     let totalMatches = 0;
-    const keywordMatches = {};
+    const keywordMatches = createKeywordCounts<any[]>();
 
     const keywordMap = new Map();
     for (const k of keywords) {
@@ -398,9 +399,9 @@ async function startOcrForFile(url) {
         const pageNum = p + 1;
 
         if (combinedRegex && pageData.flatText) {
-            const regex = new RegExp(combinedRegex.source, 'gi');
+            combinedRegex.lastIndex = 0;
             let match;
-            while ((match = regex.exec(pageData.flatText)) !== null) {
+            while ((match = combinedRegex.exec(pageData.flatText)) !== null) {
                 const key = normalizeKeywordMatch(match, keywordMap);
                 if (!key) continue;
                 counts[key] = (counts[key] || 0) + 1;
@@ -413,17 +414,16 @@ async function startOcrForFile(url) {
         const sf = pageScaleFactors[p] || 1;
         const effectiveScale = OCR_SCALE * sf;
 
-        const wordRegex = new RegExp(combinedRegex.source, 'gi');
         for (const word of pageData.words || []) {
             const wordText = (word.text || '').trim();
             // Same rule as normalizeKeywordMatch: short and numeric keywords
             // ("AI", "QC", "4500") are valid, so do not filter them out here.
             if (!wordText) continue;
 
-            wordRegex.lastIndex = 0;
+            combinedRegex.lastIndex = 0;
             let m;
             let matchedOnWord = false;
-            while ((m = wordRegex.exec(wordText)) !== null) {
+            while ((m = combinedRegex.exec(wordText)) !== null) {
                 const key = normalizeKeywordMatch(m, keywordMap);
                 if (!key) continue;
                 if (!matchedOnWord) {
@@ -449,7 +449,7 @@ async function startOcrForFile(url) {
 
     const docData = state.docDataCache[url];
     if (docData) {
-        docData._originalCounts = { ...docData.counts };
+        docData._originalCounts = Object.assign(createKeywordCounts(), docData.counts);
         docData._ocrCounts = counts;
         docData._ocrTotalMatches = totalMatches;
         for (const [kw, c] of Object.entries(counts)) {

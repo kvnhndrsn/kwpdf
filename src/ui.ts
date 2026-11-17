@@ -6,7 +6,6 @@ import * as burnSave from './measure-burn-save';
 import { getFileType, isScanRunning, openFolderFiles } from './file-handler';
 import { isOcrRunning } from './ocr';
 import { clearTextCache } from './text-store';
-import { closeResultsPanel, initResultsPanel, setJumpHandler } from './results-panel';
 import {
     collectFolderFiles,
     ensureReadPermission,
@@ -35,6 +34,9 @@ let customSearchResults = [];
 let customSearchIndex = 0;
 let _savedKeyword = '';
 let _savedKeywordMode = false;
+// Ctrl+wheel fires many times per frame; coalesce into one zoom/layout pass.
+let _pendingWheelZoom = 0;
+let _wheelZoomQueued = false;
 
 export function clearSearch() {
     state.allKeywordMode = false;
@@ -129,7 +131,6 @@ export function clearAllResults() {
     fn.teardownPdf();
 
     dom.viewer.innerHTML = '';
-    closeResultsPanel();
     clearSearch();
     // Document caches, totals and global search, then the open document's own
     // state. One path, shared with the PDF and DOCX loaders.
@@ -763,68 +764,6 @@ function getTouchDist(e) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Open the document a results-panel row belongs to and jump to its page.
- *
- * The row's page came from the same page text the scanner used, so once the
- * keyword search has run again for this document the match is there; a page a
- * user changed keywords out of falls back to the first remaining match.
- */
-function jumpToResultRow(row) {
-    closeResultsPanel();
-
-    if (!state.docDataCache[row.url]) {
-        dom.statusBar.textContent = row.file + ' is no longer loaded';
-        return;
-    }
-
-    if (state.currentDocUrl !== row.url) fn.loadDocument(row.url, row.keyword);
-
-    const startedAt = Date.now();
-
-    const waitForResults = (tries) => {
-        const results = state.currentDocType === 'pdf' ? state.searchResults : state.docSearchResults;
-        if (results.length === 0 && tries < 30) {
-            setTimeout(() => waitForResults(tries + 1), 100);
-            return;
-        }
-        if (results.length === 0) {
-            if (row.page) scrollToPage(row.page);
-            return;
-        }
-
-        const onPage = row.page === null ? -1 : results.findIndex((r) => r.page === row.page);
-        const index = onPage >= 0 ? onPage : 0;
-        if (state.currentDocType === 'pdf') goToMatch(index);
-        else fn.goToDocMatch(index);
-        updateToolbarState();
-    };
-
-    const waitForDoc = () => {
-        const ready =
-            state.currentDocUrl === row.url &&
-            (state.currentDocType === 'pdf'
-                ? !!state.pdfDoc && state.totalPages > 0
-                : !!document.getElementById('page-1'));
-        if (!ready) {
-            if (Date.now() - startedAt < 15_000) setTimeout(waitForDoc, 100);
-            else dom.statusBar.textContent = 'Could not open ' + row.file;
-            return;
-        }
-
-        if (row.keyword) {
-            if (state.currentDocType === 'pdf') fn.performSearch(row.keyword);
-            else fn.performDocSearch(row.keyword);
-            waitForResults(0);
-            return;
-        }
-
-        if (row.page) scrollToPage(row.page);
-    };
-
-    waitForDoc();
-}
-
 /** Read a picked folder handle and run it through the normal import path. */
 async function openFolderHandle(handle) {
     if (!(await ensureReadPermission(handle))) {
@@ -916,8 +855,6 @@ function setupToolbarMenu(toggle: HTMLElement | null, menu: HTMLElement | null) 
 
 export function setupEventListeners() {
     window.addEventListener('resize', checkMobileLayout);
-    initResultsPanel();
-    setJumpHandler(jumpToResultRow);
     setupLastFolderUI();
 
     /* Toolbar & sidebar buttons */
@@ -1055,7 +992,14 @@ export function setupEventListeners() {
             if (e.ctrlKey) {
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? -0.1 : 0.1;
-                fn.setZoom(state.currentScale + delta);
+                _pendingWheelZoom = state.currentScale + delta;
+                if (!_wheelZoomQueued) {
+                    _wheelZoomQueued = true;
+                    requestAnimationFrame(() => {
+                        _wheelZoomQueued = false;
+                        fn.setZoom(_pendingWheelZoom);
+                    });
+                }
             }
         },
         { passive: false },

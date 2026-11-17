@@ -1,9 +1,17 @@
-import { state, beginDocGeneration, isCurrentGeneration, resetDocumentState, createSearchCache } from './state';
+import {
+    state,
+    beginDocGeneration,
+    isCurrentGeneration,
+    resetDocumentState,
+    createSearchCache,
+    createKeywordCounts,
+} from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { fn, KEYWORDS } from './cross';
 import { htmlToText } from './html-text';
 import { isLegacyDocFile, LEGACY_DOC_MESSAGE, getDocTypeFromUrl } from './file-handler';
+import { errorMessage } from './error-message';
 
 state.searchCache = createSearchCache();
 state.docSearchResults = [];
@@ -11,6 +19,28 @@ state.docCurrentMatchIndex = -1;
 state.docOriginalHtml = null;
 state._docPageHtmls = null;
 state._docPageOffsets = null;
+
+/**
+ * Mammoth turns an untrusted DOCX into HTML. Text is escaped, but hyperlink
+ * targets and (in malformed documents) event handlers or embedded tags are not
+ * guaranteed to be safe. Sanitise once, before the HTML is stored or rendered,
+ * so both the initial page render and the highlight restore use safe markup.
+ */
+function sanitizeDocHtml(html: string): string {
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    parsed.querySelectorAll('script, iframe, object, embed, form, link, meta, base').forEach((el) => el.remove());
+    parsed.body.querySelectorAll('*').forEach((el) => {
+        for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            const value = attr.value.trim().toLowerCase();
+            const isUrl = name === 'href' || name === 'src' || name === 'xlink:href' || name === 'action';
+            if (name.startsWith('on') || (isUrl && /^(javascript|vbscript|data):/.test(value))) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    });
+    return parsed.body.innerHTML;
+}
 
 // Results per query for the current document. DOCX search reruns the whole
 // document text through a fresh regex on every keystroke and every match step,
@@ -203,7 +233,7 @@ export function loadDocxDoc(fileUrl, keyword = '') {
     dom.viewer.innerHTML = '';
     fn.clearSearch();
 
-    (async () => {
+    return (async () => {
         try {
             let cached = state.docContentCache[fileUrl];
             if (!cached) {
@@ -262,12 +292,14 @@ export function loadDocxDoc(fileUrl, keyword = '') {
             }
 
             if (keyword) cycleDocSearch(keyword);
+            return true;
         } catch (err) {
-            if (!isCurrentGeneration(generation)) return;
+            if (!isCurrentGeneration(generation)) return false;
             dom.loaderFilename.textContent = 'Error loading document';
-            dom.loaderStatus.textContent = err.message;
+            dom.loaderStatus.textContent = errorMessage(err);
             dom.loaderProgressFill.style.width = '0%';
             console.error('Document load error:', err);
+            return false;
         }
     })();
 }
@@ -283,8 +315,9 @@ function renderDocContent(html, plainText) {
         return;
     }
 
-    state.docOriginalHtml = html;
-    const pageHtmls = splitHtmlIntoPages(html);
+    const safeHtml = sanitizeDocHtml(html);
+    state.docOriginalHtml = safeHtml;
+    const pageHtmls = splitHtmlIntoPages(safeHtml);
     const pageTexts = pageHtmls.map(textFromHtml);
     state._docPageHtmls = pageHtmls;
     state._docPageOffsets = buildPageOffsets(pageTexts, plainText);
@@ -328,7 +361,7 @@ function startDocSearchComputation() {
         }
     }
 
-    const counts = {};
+    const counts = createKeywordCounts();
     results.forEach((r) => {
         counts[r.keyword] = (counts[r.keyword] || 0) + 1;
     });
@@ -517,25 +550,38 @@ export function renderDocHighlights() {
 
         let replaced = false;
         for (const textNode of nodes) {
+            const content = textNode.textContent || '';
             combinedRegex.lastIndex = 0;
-            const content = textNode.textContent;
-            if (combinedRegex.test(content)) {
-                combinedRegex.lastIndex = 0;
-                const span = document.createElement('span');
-                span.innerHTML = content.replace(combinedRegex, (match) => {
-                    const lower = match.toLowerCase();
-                    const bucket = pending.get(lower);
-                    const matchingResult = bucket && bucket.length ? bucket.shift() : undefined;
-                    const isCurrent = !!matchingResult && matchingResult.matchIndex === state.docCurrentMatchIndex;
-                    // The match is document text, not markup: a keyword that
-                    // happens to look like a tag must not become one.
-                    const safe = match.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    const mi = matchingResult ? ` data-mi="${matchingResult.matchIndex}"` : '';
-                    return `<mark class="doc-highlight${isCurrent ? ' current' : ''}"${mi}>${safe}</mark>`;
-                });
-                textNode.parentNode.replaceChild(span, textNode);
-                replaced = true;
+            const fragment = document.createDocumentFragment();
+            let cursor = 0;
+            let match: RegExpExecArray | null;
+            let found = 0;
+
+            // Build DOM nodes rather than an HTML string: `content` is untrusted
+            // document text, and only the matched substring is ours to wrap.
+            while ((match = combinedRegex.exec(content)) !== null) {
+                const bucket = pending.get(match[0].toLowerCase());
+                const matchingResult = bucket && bucket.length ? bucket.shift() : undefined;
+
+                if (match.index > cursor) {
+                    fragment.appendChild(document.createTextNode(content.slice(cursor, match.index)));
+                }
+
+                const mark = document.createElement('mark');
+                const isCurrent = !!matchingResult && matchingResult.matchIndex === state.docCurrentMatchIndex;
+                mark.className = 'doc-highlight' + (isCurrent ? ' current' : '');
+                if (matchingResult) mark.setAttribute('data-mi', String(matchingResult.matchIndex));
+                mark.textContent = match[0];
+                fragment.appendChild(mark);
+
+                cursor = match.index + match[0].length;
+                found++;
             }
+
+            if (!found) continue;
+            if (cursor < content.length) fragment.appendChild(document.createTextNode(content.slice(cursor)));
+            textNode.parentNode?.replaceChild(fragment, textNode);
+            replaced = true;
         }
         if (replaced) docHighlightedPages.add(pageNum);
     }

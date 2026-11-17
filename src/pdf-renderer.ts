@@ -244,6 +244,30 @@ function getViewportRange() {
     return ranges;
 }
 
+/**
+ * Anchor a zoom to the page under the viewport centre using cached geometry.
+ * The old implementation queried offsetTop/offsetHeight of every page in the
+ * DOM twice per zoom step, which is a full document layout read on ctrl+wheel.
+ */
+function findAnchorFromGeometry(viewportCenter: number): { page: number; offset: number } | null {
+    let top = 16;
+    for (let i = 1; i <= state.totalPages; i++) {
+        const h = (state.pageHeights[i] || 800) * state.currentScale;
+        const bottom = top + h;
+        if (viewportCenter >= top && viewportCenter < bottom) {
+            return { page: i, offset: Math.max(0, Math.min(1, (viewportCenter - top) / h)) };
+        }
+        top = bottom + 32;
+    }
+    return null;
+}
+
+function pageTopAtScale(page: number, scale: number): number {
+    let top = 16;
+    for (let i = 1; i < page; i++) top += (state.pageHeights[i] || 800) * scale + 32;
+    return top;
+}
+
 // ── cancel helpers ──
 
 /**
@@ -334,15 +358,17 @@ async function refreshVisiblePages() {
         const scrollBottom = scrollTop + dom.viewerScroll.clientHeight;
         const scrollCenter = (scrollTop + scrollBottom) / 2;
 
+        // Cached page geometry instead of offsetTop/offsetHeight reads on every
+        // page (500+ forced layout reads on each scroll stop).
         const visible = [];
+        let pageTop = 16;
         for (let i = 1; i <= state.totalPages; i++) {
-            const el = document.getElementById('page-' + i);
-            if (!el) continue;
-            const top = el.offsetTop;
-            const bottom = top + el.offsetHeight;
-            if (bottom > scrollTop && top < scrollBottom) {
-                visible.push({ pn: i, dist: Math.abs((top + bottom) / 2 - scrollCenter) });
+            const pageH = (state.pageHeights[i] || 800) * state.currentScale;
+            const bottom = pageTop + pageH;
+            if (bottom > scrollTop && pageTop < scrollBottom) {
+                visible.push({ pn: i, dist: Math.abs((pageTop + bottom) / 2 - scrollCenter) });
             }
+            pageTop = bottom + 32;
         }
         visible.sort((a, b) => a.dist - b.dist);
 
@@ -686,32 +712,8 @@ export function setZoom(newScale, force = false) {
     const viewportCenter = dom.viewerScroll.scrollTop + dom.viewerScroll.clientHeight / 2;
     const oldScrollLeft = dom.viewerScroll.scrollLeft;
 
-    let anchorEl = null;
-    let anchorOffset = 0;
-
-    for (const el of document.querySelectorAll('[id^="page-"]')) {
-        const pageTop = (el as HTMLElement).offsetTop;
-        const pageBottom = pageTop + (el as HTMLElement).offsetHeight;
-        if (viewportCenter >= pageTop && viewportCenter < pageBottom) {
-            anchorEl = el;
-            anchorOffset = Math.max(0, Math.min(1, (viewportCenter - pageTop) / (el as HTMLElement).offsetHeight));
-            break;
-        }
-    }
-
-    if (!anchorEl) {
-        let minDist = Infinity;
-        for (const el of document.querySelectorAll('[id^="page-"]')) {
-            const dist = Math.abs(
-                (el as HTMLElement).offsetTop + (el as HTMLElement).offsetHeight / 2 - viewportCenter,
-            );
-            if (dist < minDist) {
-                minDist = dist;
-                anchorEl = el;
-                anchorOffset = viewportCenter < (el as HTMLElement).offsetTop ? 0 : 1;
-            }
-        }
-    }
+    // Cached geometry instead of two full-document DOM walks per zoom step.
+    const anchor = findAnchorFromGeometry(viewportCenter);
 
     state.currentScale = clampedScale;
     fn.updateZoomDisplay();
@@ -749,10 +751,10 @@ export function setZoom(newScale, force = false) {
             state.renderedScales[pn as number] = 0;
         }
 
-        if (anchorEl) {
-            const newTop = (anchorEl as HTMLElement).offsetTop;
-            const newH = (anchorEl as HTMLElement).offsetHeight;
-            dom.viewerScroll.scrollTop = Math.max(0, newTop + anchorOffset * newH - dom.viewerScroll.clientHeight / 2);
+        if (anchor) {
+            const newTop = pageTopAtScale(anchor.page, clampedScale);
+            const newH = (state.pageHeights[anchor.page] || 800) * clampedScale;
+            dom.viewerScroll.scrollTop = Math.max(0, newTop + anchor.offset * newH - dom.viewerScroll.clientHeight / 2);
             dom.viewerScroll.scrollLeft = oldScrollLeft;
         }
         refreshVisiblePages();

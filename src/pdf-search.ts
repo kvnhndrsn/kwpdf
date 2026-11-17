@@ -10,6 +10,9 @@ state.currentMatchIndex = -1;
 state.searchCache = createSearchCache();
 state.textPageCache = {};
 
+/** Below this many text runs, cloning to a worker costs more than joining inline. */
+const WORKER_ITEM_THRESHOLD = 2000;
+
 /**
  * Gap and line test between two text runs, measured in the direction the text
  * actually runs. A run rotated 90 or 270 degrees (its transform leans on the y
@@ -45,6 +48,11 @@ function runSpacing(prevItem, item) {
  * must be changed in step with it. If the two drift, the same page yields
  * different text, and therefore different matches, depending on which path
  * loaded it.
+ */
+/**
+ * Canonical text-run join. A behaviourally identical copy lives in
+ * doc_processor_worker.js; any change here must be mirrored there or counts
+ * differ depending on which path processed the page.
  */
 export function processTextContent(textContent) {
     let pageText = '';
@@ -272,9 +280,13 @@ async function computeSearchForQuery(query) {
 
 export async function processTextContentAsync(textContent) {
     const pool = state.workerPool;
-    if (pool && pool.initialized) {
+    const items = textContent.items;
+    // postMessage structured-clones the whole items array synchronously on the
+    // main thread, then clones the result back. For a normal page that costs
+    // more than the linear join; only offload pages large enough to amortise it.
+    if (pool && pool.initialized && items && items.length > WORKER_ITEM_THRESHOLD) {
         try {
-            return await pool.runProcessTextContent(textContent.items);
+            return await pool.runProcessTextContent(items);
         } catch (e) {
             // fall back to sync processing
         }
@@ -304,12 +316,19 @@ function appendOcrResults(keyword) {
     if (!getter) return;
     const matches = getter(keyword, state.currentDocUrl);
     if (!matches || matches.length === 0) return;
+
+    // The old `.some()` per OCR hit made this O(matches x ocrHits). A set of
+    // quantised (page, x, y) keys makes the duplicate check O(1) per hit.
+    const seen = new Set<string>();
+    for (const r of state.searchResults) {
+        seen.add(r.x === undefined ? `${r.page}|ocr` : `${r.page}|${Math.round(r.x)}|${Math.round(r.y)}`);
+    }
+
     for (const m of matches) {
         const hasCoords = m.x !== undefined;
-        const dup = state.searchResults.some(
-            (r) => r.page === m.page && (hasCoords ? Math.abs(r.x - m.x) < 1 && Math.abs(r.y - m.y) < 1 : r.ocr),
-        );
-        if (dup) continue;
+        const key = hasCoords ? `${m.page}|${Math.round(m.x)}|${Math.round(m.y)}` : `${m.page}|ocr`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         if (hasCoords) {
             state.searchResults.push({ page: m.page, x: m.x, y: m.y, width: m.width, height: m.height, ocr: true });
         } else {
@@ -488,11 +507,29 @@ export function cycleSearch(query) {
     performSearch(query);
 }
 
+// Navigation rebuilds this index over every match even when neither the result
+// array nor its length changed. Memoise by array identity + length; result
+// objects themselves are shared, so in-place coordinate edits still show up.
+const byPageMemo = new WeakMap<object, Map<number, Record<number, any[]>>>();
+
 function buildSearchResultsByPage() {
-    const byPage = {};
-    state.searchResults.forEach((r, i) => {
-        if (!byPage[r.page]) byPage[r.page] = [];
-        byPage[r.page].push({ result: r, globalIndex: i });
+    const results = state.searchResults;
+    let versions = byPageMemo.get(results);
+    const byPage = versions?.get(results.length);
+    if (byPage) {
+        state.searchResultsByPage = byPage;
+        return;
+    }
+
+    const next: Record<number, any[]> = {};
+    results.forEach((r, i) => {
+        if (!next[r.page]) next[r.page] = [];
+        next[r.page].push({ result: r, globalIndex: i });
     });
-    state.searchResultsByPage = byPage;
+    if (!versions) {
+        versions = new Map();
+        byPageMemo.set(results, versions);
+    }
+    versions.set(results.length, next);
+    state.searchResultsByPage = next;
 }

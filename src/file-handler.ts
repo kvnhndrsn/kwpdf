@@ -1,4 +1,4 @@
-import { state, dropCachedDocument } from './state';
+import { state, dropCachedDocument, createKeywordCounts } from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { processTextContentAsync } from './pdf-search';
@@ -72,12 +72,21 @@ export function fileDedupeKey(file): string {
     return path + '|' + (file?.size ?? '') + '|' + (file?.lastModified ?? '');
 }
 
+const dedupeIndex = new Map<string, string>();
+
+/** Register a document's dedupe key when its cache entry is created. */
+export function rememberDedupeKey(key: string, url: string): void {
+    dedupeIndex.set(key, url);
+}
+
 /** URL of the already-loaded document `file` duplicates, if there is one. */
 export function findDuplicateUrl(file): string | null {
     const key = fileDedupeKey(file);
-    for (const [url, doc] of Object.entries(state.docDataCache)) {
-        if ((doc as any)?._dedupeKey === key) return url;
-    }
+    const url = dedupeIndex.get(key);
+    // Self-healing: a clear-all or eviction may have dropped the entry without
+    // going through this module, so verify the cached URL is still live.
+    if (url && (state.docDataCache[url] as any)?._dedupeKey === key) return url;
+    if (url) dedupeIndex.delete(key);
     return null;
 }
 
@@ -142,6 +151,18 @@ function showFileError(fileName, message) {
 }
 
 export function evictCaches() {
+    // The common case is "no budget exceeded". Building and sorting the whole
+    // candidate list for that case made every document insert O(n log n).
+    const pdfAlready = Object.keys(state.docTextCache).length;
+    const docxAlready = Object.keys(state.docContentCache).length;
+    if (
+        pdfAlready <= state.MAX_CACHE_COUNT_PER_TYPE &&
+        docxAlready <= state.MAX_CACHE_COUNT_PER_TYPE &&
+        state.totalCacheSize <= state.MAX_CACHE_SIZE_TOTAL
+    ) {
+        return;
+    }
+
     const allEntries = [];
 
     Object.entries(state.docTextCache).forEach(([key, entry]) => {
@@ -190,16 +211,18 @@ export function evictCaches() {
  */
 export function countKeywordMatches(texts: string[], keywords = KEYWORDS || []) {
     const combinedRegex = getKeywordRegex(keywords);
-    const counts = {};
+    const counts = createKeywordCounts();
     let total = 0;
 
     if (!combinedRegex) return { counts, total };
 
     for (const text of texts) {
         if (!text) continue;
-        const regex = new RegExp(combinedRegex.source, 'gi');
+        // Reusing the cached regex avoids recompiling a 500-alternative pattern
+        // once per page. It is global, so reset lastIndex before each page.
+        combinedRegex.lastIndex = 0;
         let match;
-        while ((match = regex.exec(text)) !== null) {
+        while ((match = combinedRegex.exec(text)) !== null) {
             const key = normalizeKeywordMatch(match, keywords);
             if (!key) continue;
             counts[key] = (counts[key] || 0) + 1;
@@ -532,11 +555,15 @@ async function processFiles(source) {
 
         fn.renderPlaceholderCard(file.name, url, file);
 
-        // Load & render immediately — text extraction + keyword search happen inside loadPDF/loadDocxDoc
-        fn.loadDocument(url);
+        // Load & render immediately — text extraction + keyword search happen inside loadPDF/loadDocxDoc.
+        // Wait for the result: a corrupt file must not be counted as a successful scan.
+        const opened = await fn.loadDocument(url);
 
-        state.processed = 1;
+        state.processed = opened === false ? 0 : 1;
         state.emit('stats-changed');
+        if (opened === false) {
+            dom.statusBar.textContent = 'Could not open ' + file.name + ' — see the loader for details';
+        }
         return;
     }
 

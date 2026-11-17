@@ -11,6 +11,15 @@ export function createSearchCache(): Record<string, SearchResult[]> {
     return Object.create(null) as Record<string, SearchResult[]>;
 }
 
+/**
+ * Keyword-keyed count maps need the same protection: a keyword is user text,
+ * and `__proto__`/`constructor` must be ordinary keys rather than prototype
+ * accessors that corrupt totals.
+ */
+export function createKeywordCounts<T = number>(): Record<string, T> {
+    return Object.create(null) as Record<string, T>;
+}
+
 export const state: State = {
     pdfDoc: null,
     currentDocUrl: '',
@@ -32,7 +41,7 @@ export const state: State = {
     docSearchResults: [],
     docCurrentMatchIndex: -1,
     docOriginalHtml: null,
-    docKeywordCounts: {},
+    docKeywordCounts: createKeywordCounts(),
     docKeywordResults: [],
 
     pageHeights: {},
@@ -159,7 +168,7 @@ export function resetDocumentState(): void {
     state.docSearchResults = [];
     state.docCurrentMatchIndex = -1;
     state.docOriginalHtml = null;
-    state.docKeywordCounts = {};
+    state.docKeywordCounts = createKeywordCounts();
     state.docKeywordResults = [];
     state._docPageHtmls = null;
     state._docPageOffsets = null;

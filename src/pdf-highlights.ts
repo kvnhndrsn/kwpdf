@@ -103,13 +103,27 @@ function applyPage(pageNum: number): void {
     else decoratedPages.delete(pageNum);
 }
 
+/**
+ * How far from the current page to create marks eagerly. A keyword can hit
+ * hundreds of pages; building every mark in one pass was a long task on the
+ * main thread. Far pages are decorated by renderHighlightsForPage() when their
+ * canvas comes into the prerender window.
+ */
+const HIGHLIGHT_PAGE_RADIUS = 10;
+
 /** Reconcile every page that has, or had, highlights. */
 export function renderAllHighlights(): void {
     const pages = new Set<number>(decoratedPages);
     for (const key of Object.keys(state.searchResultsByPage)) {
         pages.add(Number(key));
     }
-    for (const pageNum of pages) applyPage(pageNum);
+    for (const pageNum of pages) {
+        const hasResults = (state.searchResultsByPage[pageNum] || []).length > 0;
+        const nearViewport = Math.abs(pageNum - (state.currentPage || 1)) <= HIGHLIGHT_PAGE_RADIUS;
+        // Always visit pages that already carry marks so stale ones are removed.
+        if (hasResults && !nearViewport && !decoratedPages.has(pageNum)) continue;
+        applyPage(pageNum);
+    }
 }
 
 /** Reconcile a single page, e.g. after its canvas was re-rendered. */

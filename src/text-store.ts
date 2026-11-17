@@ -18,6 +18,9 @@ const STORE = 'texts';
 const OPEN_TIMEOUT_MS = 2000;
 /** Skip single documents whose cached text would be unreasonably large. */
 export const MAX_STORED_ENTRY_BYTES = 32 * 1024 * 1024;
+/** Bounds for the whole store, not just one entry. */
+export const MAX_STORED_ENTRIES = 60;
+export const MAX_STORED_TOTAL_BYTES = 256 * 1024 * 1024;
 
 interface StoredPage {
     text: string;
@@ -173,7 +176,23 @@ export async function writeStoredText(entry: StoredText): Promise<boolean> {
     return new Promise((resolve) => {
         try {
             const transaction = db.transaction(STORE, 'readwrite');
-            transaction.objectStore(STORE).put(entry);
+            const store = transaction.objectStore(STORE);
+            store.put(entry);
+
+            // Prune in the same transaction so a long scan cannot leave the
+            // store growing without bound. The cursor sees the entry just put.
+            const all: StoredText[] = [];
+            const cursorRequest = store.openCursor();
+            cursorRequest.onsuccess = () => {
+                const cursor = cursorRequest.result;
+                if (cursor) {
+                    all.push(cursor.value as StoredText);
+                    cursor.continue();
+                    return;
+                }
+                for (const key of entriesToPrune(all)) store.delete(key);
+            };
+
             transaction.oncomplete = () => {
                 db.close();
                 resolve(true);
@@ -189,6 +208,36 @@ export async function writeStoredText(entry: StoredText): Promise<boolean> {
             resolve(false);
         }
     });
+}
+
+/** Approximate bytes an entry occupies, using the same estimator as the live cache. */
+export function storedEntrySize(entry: StoredText): number {
+    return entry.type === 'pdf' ? estimatePagesSize(entry.pages) : estimateTextEntrySize(entry.html, entry.text);
+}
+
+/**
+ * Keys to evict, oldest first, until both the entry-count and byte budgets fit.
+ * Pure so the eviction policy can be tested without IndexedDB.
+ */
+export function entriesToPrune(
+    entries: StoredText[],
+    maxCount = MAX_STORED_ENTRIES,
+    maxBytes = MAX_STORED_TOTAL_BYTES,
+): string[] {
+    const total = entries.reduce((sum, entry) => sum + storedEntrySize(entry), 0);
+    if (entries.length <= maxCount && total <= maxBytes) return [];
+
+    const oldestFirst = [...entries].sort((a, b) => a.savedAt - b.savedAt);
+    const toDelete: string[] = [];
+    let count = oldestFirst.length;
+    let bytes = total;
+    for (const entry of oldestFirst) {
+        if (count <= maxCount && bytes <= maxBytes) break;
+        toDelete.push(entry.key);
+        count--;
+        bytes -= storedEntrySize(entry);
+    }
+    return toDelete;
 }
 
 /** Save an extracted PDF's page text. Returns false when it was not stored. */

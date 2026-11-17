@@ -6,6 +6,7 @@ import {
     storePdfText,
     storeDocxText,
     clearTextCache,
+    entriesToPrune,
     TEXT_CACHE_VERSION,
 } from '../text-store';
 
@@ -88,5 +89,24 @@ describe('storage without IndexedDB', () => {
     it('rejects empty payloads before touching storage', async () => {
         expect(await storePdfText('abc|a.pdf', 'a.pdf', [])).toBe(false);
         expect(await storeDocxText('def|b.docx', 'b.docx', 'docx', '', '')).toBe(false);
+    });
+});
+
+describe('entriesToPrune', () => {
+    const entry = (key, savedAt) => docxEntry({ key, savedAt, html: 'x'.repeat(1000), text: 'x'.repeat(1000) });
+
+    it('keeps everything while both budgets fit', () => {
+        const entries = [entry('a', 1), entry('b', 2)];
+        expect(entriesToPrune(entries, 5, 1_000_000)).toEqual([]);
+    });
+
+    it('evicts the oldest entries until the count fits', () => {
+        const entries = [entry('a', 1), entry('b', 2), entry('c', 3)];
+        expect(entriesToPrune(entries, 2, 1_000_000)).toEqual(['a']);
+    });
+
+    it('evicts oldest entries until the byte budget fits', () => {
+        const entries = [entry('a', 1), entry('b', 2), entry('c', 3)];
+        expect(entriesToPrune(entries, 10, 2_100)).toEqual(['a', 'b']);
     });
 });

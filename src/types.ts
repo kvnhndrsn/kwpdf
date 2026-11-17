@@ -286,10 +286,6 @@ export interface AppFunctions {
     updateSidebarBadge(): void;
     updateStats(): void;
 
-    // Results panel
-    openResultsPanel(url?: string): void;
-    closeResultsPanel(): void;
-
     // Files
     handleDrop(event: any): Promise<void>;
     extractPdfText(arrayBuffer: any, fileName: string, id?: any, file?: any): Promise<any>;

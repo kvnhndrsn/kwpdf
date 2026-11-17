@@ -1,5 +1,6 @@
 let cachedKeywordRegex: RegExp | null = null;
 let cachedKeywordList: string | null = null;
+let cachedKeywordsSource: string[] | null = null;
 
 // `normalizeKeywordMatch` runs once per match — thousands of times per
 // document. Resolving the canonical casing through a Map turns that inner loop
@@ -56,12 +57,20 @@ export function getKeywordRegex(keywords: string[] | null | undefined): RegExp |
     if (!keywords) return null;
     if (!Array.isArray(keywords)) return null;
 
+    // The common case is the same array object (a keyword list loaded once and
+    // reused for every page). Skip serialising it on every lookup.
+    if (cachedKeywordRegex && cachedKeywordsSource === keywords) {
+        cachedKeywordRegex.lastIndex = 0;
+        return cachedKeywordRegex;
+    }
+
     const keywordsJson = JSON.stringify(keywords);
 
     if (cachedKeywordRegex && cachedKeywordList === keywordsJson) {
         // The instance is shared across callers and is stateful (global flag).
         // Any early exit leaves lastIndex behind, so always start from zero.
         cachedKeywordRegex.lastIndex = 0;
+        cachedKeywordsSource = keywords;
         return cachedKeywordRegex;
     }
 
@@ -69,6 +78,7 @@ export function getKeywordRegex(keywords: string[] | null | undefined): RegExp |
     if (unique.length === 0) {
         cachedKeywordRegex = null;
         cachedKeywordList = keywordsJson;
+        cachedKeywordsSource = keywords;
         return cachedKeywordRegex;
     }
 
@@ -76,12 +86,14 @@ export function getKeywordRegex(keywords: string[] | null | undefined): RegExp |
 
     cachedKeywordRegex = new RegExp(`\\b(${pattern})\\b`, 'gi');
     cachedKeywordList = keywordsJson;
+    cachedKeywordsSource = keywords;
     return cachedKeywordRegex;
 }
 
 export function clearKeywordRegexCache(): void {
     cachedKeywordRegex = null;
     cachedKeywordList = null;
+    cachedKeywordsSource = null;
     canonicalSource = null;
     canonicalLength = -1;
     canonicalMap = null;
