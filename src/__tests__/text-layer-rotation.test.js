@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
+// The legacy build is the one pdf.js supports outside a browser: it carries
+// the polyfills (Promise.try, and friends) that Node < 23 lacks.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { processTextContent, buildOffsetMap, computeMatchCoords } from '../pdf-search';
 import { getTextCoords } from '../search-controller';
 

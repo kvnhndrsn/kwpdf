@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { PDFDocument, StandardFonts, degrees, decodePDFRawStream, PDFRawStream } from 'pdf-lib';
-import { getDocument } from 'pdfjs-dist/build/pdf.mjs';
+// The legacy build is the one pdf.js supports outside a browser: it carries
+// the polyfills (Promise.try, and friends) that Node < 23 lacks.
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { burnMeasurementsIntoPdf, measuredFileName, measuredPageFileName } from '../measure-burn';
 import { calloutShape } from '../callout';
 
