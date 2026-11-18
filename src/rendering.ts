@@ -20,9 +20,40 @@ const ACTIVATE_MAX_ATTEMPTS = 25;
 const ACTIVATE_INTERVAL_MS = 200;
 
 function isDocReady(doc) {
+    // Interactive, not fully indexed: the loader is gone and the document can be
+    // read. Keyword cycling additionally waits for the index (see whenIndexed).
     return doc.type === 'pdf'
-        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._gsPageCacheReady)
+        ? !!(state.pdfDoc && state.currentDocUrl === doc.url && state._pdfInteractive)
         : !!state.docContentCache[doc.url];
+}
+
+/**
+ * Run `onReady` once the background index for a PDF has finished.
+ *
+ * Clicking a document's count used to call cycle-all-keyword straight away,
+ * which returns early unless the index is complete — a silent no-op for the
+ * first seconds of a large drawing. Say what is happening and then act.
+ */
+function whenIndexed(doc, onReady, attempt = 0) {
+    if (state.searchDeduplicated) {
+        onReady();
+        return;
+    }
+    if (attempt === 0) {
+        dom.statusBar.textContent =
+            'Indexing ' + (doc.name || 'document') + '… keyword counts will update when it finishes';
+    }
+    if (attempt >= ACTIVATE_MAX_ATTEMPTS * 10) {
+        dom.statusBar.textContent = 'Still indexing ' + (doc.name || 'document') + ' — try again in a moment';
+        return;
+    }
+    setTimeout(() => whenIndexed(doc, onReady, attempt + 1), ACTIVATE_INTERVAL_MS);
+}
+
+/** Cycle this document's matches, waiting for the index when it is still running. */
+function cycleAllWhenIndexed(doc, run) {
+    if (doc.type === 'pdf') whenIndexed(doc, run);
+    else run();
 }
 
 /**
@@ -251,9 +282,11 @@ function renderTree(node, path = '') {
 
                 if (onSameDoc) {
                     _closeMobileSidebar();
-                    if (doc.type === 'pdf') _cycleAllKeywords();
-                    else _cycleAllDocKeywords();
-                    refreshTreeState();
+                    cycleAllWhenIndexed(doc, () => {
+                        if (doc.type === 'pdf') _cycleAllKeywords();
+                        else _cycleAllDocKeywords();
+                        refreshTreeState();
+                    });
                     return;
                 }
 
@@ -261,9 +294,11 @@ function renderTree(node, path = '') {
 
                 whenDocReady(doc, () => {
                     _closeMobileSidebar();
-                    if (doc.type === 'pdf') _cycleAllKeywords();
-                    else _cycleAllDocKeywords();
-                    refreshTreeState();
+                    cycleAllWhenIndexed(doc, () => {
+                        if (doc.type === 'pdf') _cycleAllKeywords();
+                        else _cycleAllDocKeywords();
+                        refreshTreeState();
+                    });
                 });
             });
 
@@ -324,9 +359,11 @@ function renderTree(node, path = '') {
 
             if (onSameDoc) {
                 _closeMobileSidebar();
-                if (doc.type === 'pdf') _cycleAllKeywords();
-                else _cycleAllDocKeywords();
-                refreshTreeState();
+                cycleAllWhenIndexed(doc, () => {
+                    if (doc.type === 'pdf') _cycleAllKeywords();
+                    else _cycleAllDocKeywords();
+                    refreshTreeState();
+                });
                 return;
             }
 

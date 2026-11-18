@@ -10,13 +10,38 @@ import * as dom from './dom';
 import { fn, pdfjsLib, basePath } from './cross';
 import { evictCaches, getDocTypeFromUrl } from './file-handler';
 import { autoSetScale, autoDetectScale } from './measure';
-import { processTextContentAsync } from './pdf-search';
+import { processTextContentAsync, precomputePrefix, precomputeRemaining } from './pdf-search';
+import { mark as perfMark, measure as perfMeasure } from './perf';
 import { estimatePagesSize } from './cache-size';
+import { cacheKey } from './text-store';
 import { requestPassword } from './password-prompt';
 import { errorMessage } from './error-message';
 
 /** Pages extracted in parallel during load-time text extraction. */
 const EXTRACT_CONCURRENCY = 8;
+
+/**
+ * Publish the raster cache key for a PDF opened straight from its object URL.
+ *
+ * The batch scan writes this key while extracting text, but a single dropped
+ * file never goes through that path — it is opened here and scanned here — so
+ * the content hash has to be produced on this side too. It runs after the first
+ * paint is under way and the cache is optional, so a failure is silent.
+ */
+async function rememberContentKey(fileUrl: string, generation: number): Promise<void> {
+    try {
+        const doc = state.docDataCache[fileUrl];
+        if (!doc) return;
+        const fileRef = (doc as any).file;
+        const bytes = fileRef ? await fileRef.arrayBuffer() : await (await fetch(fileUrl)).arrayBuffer();
+        const key = await cacheKey(bytes, doc.name || 'document.pdf');
+        if (!key || !isCurrentGeneration(generation) || state.currentDocUrl !== fileUrl) return;
+        (doc as any)._rasterKey = key;
+        state._rasterKey = key;
+    } catch (e) {
+        // A cache that cannot be keyed is a cache miss, not a broken document.
+    }
+}
 
 // Placeholder entry for a page whose text could not be extracted. Keeps the
 // cached pages array 1:1 with real page numbers so failures never shift the
@@ -65,16 +90,31 @@ function loadPDF(fileUrl, keyword = '') {
         // destroying the loading task causes is reported as "password required"
         // rather than as a broken PDF.
         let passwordCancelled = false;
+        // True when the prefix stopped on a match and pages remain un-indexed.
+        let needsTail = false;
         try {
             // CMaps and standard font data ship with the build: without them
             // CJK text and non-embedded standard fonts render as missing
-            // glyphs. isEvalSupported is off so no PDF can reach `new Function`.
+            // glyphs. wasm/ and iccs/ do the same for JPX/JBIG2 images, ICC
+            // profiles and CMYK conversion, which pdf.js 6 decodes through
+            // WebAssembly — real drawings hit all three.
+            //
+            // There is no isEvalSupported opt-out to set any more: pdf.js 6 has
+            // no host eval, and document JavaScript only runs in its sandboxed
+            // QuickJS interpreter (wasm/quickjs-eval.wasm) when `enableScripting`
+            // is on, which this app never enables.
+            //
+            // Deliberately no `ownerDocument`/`styleElement` here either: either
+            // one forces pdf.js to render on the main thread instead of in its
+            // renderer worker.
+            perfMark('pdf:getDocument:start');
             const loadingTask = pdfjsLib.getDocument({
                 url: fileUrl,
                 cMapUrl: basePath + 'cmaps/',
                 cMapPacked: true,
                 standardFontDataUrl: basePath + 'standard_fonts/',
-                isEvalSupported: false,
+                wasmUrl: basePath + 'wasm/',
+                iccUrl: basePath + 'iccs/',
             });
             // Without this handler pdf.js rejects an encrypted document outright.
             // It calls back again with reason 2 when the password was wrong.
@@ -96,27 +136,46 @@ function loadPDF(fileUrl, keyword = '') {
                 });
             };
             const doc = await loadingTask.promise;
+            perfMeasure('pdf:getDocument', 'pdf:getDocument:start');
 
             if (!isCurrentGeneration(generation)) {
-                // A newer document won the race; discard this one.
+                // A newer document won the race; discard this one. pdf.js 6
+                // removed PDFDocumentProxy.destroy(), so the loading task is
+                // what actually tears the document and its worker down.
                 try {
-                    doc.destroy();
+                    doc.loadingTask.destroy();
                 } catch (e) {}
                 return;
             }
 
             state.pdfDoc = doc;
             state.currentDocUrl = fileUrl;
+            // The raster cache key belongs to the document and is written when
+            // the file is scanned, so it has to follow whichever document is
+            // open. Without this the renderer read `state._rasterKey`, found it
+            // undefined, and skipped both the cache read and the write.
+            state._rasterKey = state.docDataCache[fileUrl]?._rasterKey;
+            // Started here and awaited before the first paint: the raster cache
+            // can only be consulted once the key exists, and page 1 is the page
+            // the cache is for. The hash overlaps with the document parse, so
+            // the wait is usually free.
+            const rasterKeyReady = state._rasterKey ? Promise.resolve() : rememberContentKey(fileUrl, generation);
             state.totalPages = doc.numPages;
 
             dom.loaderStatus.textContent = 'Setting up ' + state.totalPages + ' pages...';
             dom.loaderProgressFill.style.width = '30%';
+            perfMark('pdf:setupVirtualPages:start');
             await fn.setupVirtualPages();
+            perfMeasure('pdf:setupVirtualPages', 'pdf:setupVirtualPages:start');
             if (!isCurrentGeneration(generation)) return;
 
             dom.loaderStatus.textContent = 'Rendering first page...';
             dom.loaderProgressFill.style.width = '45%';
+            perfMark('pdf:firstRender:start');
+            await rasterKeyReady;
+            if (!isCurrentGeneration(generation)) return;
             if (!fn.isPageRendered(1)) await fn.renderPageNow(1);
+            perfMeasure('pdf:firstRender', 'pdf:firstRender:start');
             if (!isCurrentGeneration(generation)) return;
 
             dom.loaderStatus.textContent = 'Extracting text content...';
@@ -141,6 +200,7 @@ function loadPDF(fileUrl, keyword = '') {
                 // flight; each is converted to its compact text/items form before
                 // the next is requested, so the raw payload becomes garbage
                 // immediately instead of being pinned until every page is done.
+                perfMark('pdf:extract:start');
                 const pageTextData = new Array(state.totalPages);
                 let nextPage = 1;
                 const workers = Array.from({ length: Math.min(EXTRACT_CONCURRENCY, state.totalPages) }, async () => {
@@ -184,6 +244,7 @@ function loadPDF(fileUrl, keyword = '') {
                     }
                 });
                 await Promise.all(workers);
+                perfMeasure('pdf:extract', 'pdf:extract:start');
                 if (!isCurrentGeneration(generation)) return;
                 dom.loaderProgressFill.style.width = '80%';
                 const fileName = state.docDataCache[fileUrl]?.name || 'Document';
@@ -206,11 +267,18 @@ function loadPDF(fileUrl, keyword = '') {
                 }
                 dom.loaderProgressFill.style.width = '80%';
                 fn.rebuildTextLayers();
-                await fn.precomputeAllSearches();
+                // Only as far as the first match: that is all the landing jump
+                // needs, and the rest of the pages are pure CPU the user was
+                // previously waiting on. Nothing was pushed, so it cannot
+                // duplicate a match.
+                perfMark('pdf:precompute:start');
+                const prefix = await precomputePrefix({ preferredKeyword: keyword });
+                needsTail = prefix.needsTail;
                 if (!isCurrentGeneration(generation)) return;
-                state._gsPageCacheReady = true;
+                perfMeasure('pdf:precompute', 'pdf:precompute:start');
 
-                // Populate sidebar keyword counts from search results
+                // Populate sidebar keyword counts from the pages indexed so far;
+                // the background pass republishes them when it reaches the end.
                 const counts = createKeywordCounts();
                 for (const [kw, matches] of Object.entries(state.searchCache)) {
                     counts[kw] = matches.length;
@@ -223,17 +291,12 @@ function loadPDF(fileUrl, keyword = '') {
                 state.emit('stats-changed');
             }
 
-            // Auto-detect measurement scale from embedded metadata or page text
-            const detected = await autoDetectScale(fileUrl);
-            if (!isCurrentGeneration(generation)) return;
-            if (detected && autoSetScale(detected)) {
-                const scaleInput = document.getElementById('scaleInput');
-                if (scaleInput) (scaleInput as HTMLInputElement).value = '1:' + detected;
-                fn.refreshAllMeasurements();
-            }
-
             dom.loaderProgressFill.style.width = '100%';
             dom.loader.style.display = 'none';
+            // Interactive: readable, scrollable and jumpable before every page
+            // has been indexed. `_gsPageCacheReady` keeps meaning "fully
+            // indexed" and is set by the indexer when the tail lands.
+            state._pdfInteractive = true;
             fn.updatePageInfo();
             fn.updateZoomDisplay();
             dom.pageInput.max = String(state.totalPages);
@@ -253,7 +316,29 @@ function loadPDF(fileUrl, keyword = '') {
                 }
             }
 
+            // Unchanged: still the first occurrence (lowest page, then reading
+            // order) of the first keyword that appears in page order, or of the
+            // explicitly requested keyword.
             if (keyword) fn.performSearch(keyword);
+
+            // Finish the index, then probe the drawing scale — the probe re-reads
+            // the file and re-renders measurement overlays, so it runs after the
+            // tail rather than beside it, and well after the interactive point.
+            const finishBackground = async () => {
+                if (needsTail) await precomputeRemaining();
+                if (!isCurrentGeneration(generation)) return;
+                perfMark('pdf:autoDetectScale:start');
+                const detected = await autoDetectScale(fileUrl);
+                perfMeasure('pdf:autoDetectScale', 'pdf:autoDetectScale:start');
+                if (!isCurrentGeneration(generation)) return;
+                if (detected && autoSetScale(detected)) {
+                    const scaleInput = document.getElementById('scaleInput');
+                    if (scaleInput) (scaleInput as HTMLInputElement).value = '1:' + detected;
+                    fn.refreshAllMeasurements();
+                }
+            };
+            void finishBackground().catch(() => {});
+
             return true;
         } catch (err) {
             if (!isCurrentGeneration(generation)) return;

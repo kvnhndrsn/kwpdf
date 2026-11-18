@@ -27,6 +27,27 @@ export function setMammoth(v: any): void {
 export function setKeywords(v: string[]): void {
     KEYWORDS = v;
 }
+
+/**
+ * Resolves once the keyword list has been loaded (or its load has failed).
+ *
+ * Anything that scans a document must wait for this. A scan that starts first
+ * measures against an empty or stale list, publishes a wrong total, and the user
+ * sees the count change under them a moment later. Lives here rather than in
+ * keywords.ts so the scan path does not have to import that module.
+ */
+let markKeywordsReadyFn: () => void = () => {};
+const keywordsReadyPromise = new Promise<void>((resolve) => {
+    markKeywordsReadyFn = resolve;
+});
+
+export function whenKeywordsReady(): Promise<void> {
+    return keywordsReadyPromise;
+}
+
+export function markKeywordsReady(): void {
+    markKeywordsReadyFn();
+}
 export function setKeywordLists(v: Record<string, string[]>): void {
     KEYWORD_LISTS = v;
 }

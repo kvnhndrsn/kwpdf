@@ -6,6 +6,7 @@ import * as burnSave from './measure-burn-save';
 import { getFileType, isScanRunning, openFolderFiles } from './file-handler';
 import { isOcrRunning } from './ocr';
 import { clearTextCache } from './text-store';
+import { clearRasterCache } from './raster-store';
 import {
     collectFolderFiles,
     ensureReadPermission,
@@ -871,10 +872,14 @@ export function setupEventListeners() {
     dom.settingsBtn?.addEventListener('click', toggleSettings);
     dom.clearTextCacheBtn?.addEventListener('click', async () => {
         closeSettings();
-        const cleared = await clearTextCache();
-        dom.statusBar.textContent = cleared
-            ? 'Saved text cache cleared — documents will be re-extracted on import'
-            : 'No saved text cache to clear';
+        // Both stores: to someone asking to clear the cache, saved page bitmaps
+        // and saved text are the same thing. Leaving up to 64 MB of rasters
+        // behind would make the button look broken.
+        const [cleared, rastersCleared] = await Promise.all([clearTextCache(), clearRasterCache()]);
+        dom.statusBar.textContent =
+            cleared || rastersCleared
+                ? 'Saved text and page cache cleared — documents will be re-extracted on import'
+                : 'No saved cache to clear';
     });
     dom.mobileToggleBtn?.addEventListener('click', toggleMobileSidebar);
     setupToolbarMenu(dom.zoomMenuBtn, dom.zoomMenu);

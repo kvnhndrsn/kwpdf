@@ -374,7 +374,8 @@ async function startOcrForFile(url) {
 
     if (state.currentDocUrl !== url) {
         try {
-            pdfDoc.destroy();
+            // pdf.js 6 removed PDFDocumentProxy.destroy().
+            pdfDoc.loadingTask.destroy();
         } catch (e) {
             /* ignore */
         }

@@ -45,6 +45,10 @@ test('scans a PDF, highlights every keyword and steps next/prev', async ({ page 
 
     const row = page.locator('.tree-file-item').first();
     await expect(row).toBeVisible();
+    // The sidebar count is republished when the background index lands, so read
+    // it in its steady state rather than mid-index (`data-indexing` is the flag
+    // the indexer sets while pages are still being scanned).
+    await page.waitForFunction(() => document.body.dataset.indexing === '0', null, { timeout: 20_000 });
     const treeCount = Number((await row.locator('.tree-count').textContent()).trim());
     expect(treeCount).toBeGreaterThan(0);
 
@@ -238,6 +242,7 @@ test('skips a file that is already loaded', async ({ page }) => {
 
     await dropFiles(page, ['one-kw.pdf'], {}, when);
     await expect(rows).toHaveCount(1);
+    await page.waitForFunction(() => document.body.dataset.indexing === '0', null, { timeout: 20_000 });
     const countText = (await rows.first().locator('.tree-count').textContent()).trim();
 
     // The same file again: same path, size and modification time, but a new drop

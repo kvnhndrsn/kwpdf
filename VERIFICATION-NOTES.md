@@ -357,3 +357,82 @@ Docs-only change: no build or test run was needed, and none of the claims are ne
 - Clearing measurements deletes the document's list, which already held committed callouts. What survived was a bubble still being edited (it is deliberately not in the list until its text is committed) and a half-placed point, so `clearMeasurementsForCurrentDoc` now also drops the editing id, the draft and the pending point. A new case in `measure-clear.test.js` proves a committed callout goes with the rest and is dropped from storage.
 - Verified: 349 unit tests, `npm run typecheck` 0 (both configs), eslint 0, `format:check` 0, `npm run build` 0, and the burn probe above.
 - NOT verified: a saved `-measured.pdf` opened in another viewer, and the three changes clicked through in the running app.
+
+## Performance phases 0–3 (added with the pdf.js 6 upgrade)
+
+Automated and green: typecheck (both configs), lint, format:check, 375 unit
+tests, build, and the Playwright suite.
+
+- **Phase 0** — `src/__tests__/perf.test.js`. The baseline table lives in
+  `REMAINING-WORK.md` and is produced by `KWPDF_BASELINE=1 npx playwright test
+  e2e/perf-baseline.spec.js` against `fixtures/vector-heavy.pdf`.
+- **Phase 1** — `src/__tests__/pdf-search.test.js` (`precomputePrefix`,
+  `precomputeRemaining`): stops at the first match; no-match fallback to the full
+  scan; the requested keyword wins over the first keyword in the document;
+  duplicate-free resume; immunity to the shared regex being reset mid-run (the
+  bug a concurrent `countKeywordMatches()` would cause); tail append keeps
+  `currentMatchIndex` on the same object; generation change abandons the tail;
+  counts republished for the open document.
+  `e2e/smoke.spec.js` waits for `body[data-indexing="0"]` before comparing the
+  counter with the tree total, because the sidebar count is republished when the
+  index lands.
+- **Phase 3** — `src/__tests__/destroy-migration.test.js` is the gate for the
+  removed `PDFDocumentProxy.destroy()`: `tsc` cannot see it (`State.pdfDoc` is
+  `any`), and every call site sits in a try/catch, so a regression is one leaked
+  pdf.js worker per document, silently.
+- **Phase 2** — `src/__tests__/raster-store.test.js`: key stability and
+  separation by page/zoom/DPR/quality, bucket reuse, LRU by count and by bytes,
+  payload validation, and degraded behaviour with no IndexedDB.
+
+### Found while verifying (all three fixed)
+
+- **The raster cache never read or wrote a single bitmap.** `pdf-renderer` keyed
+  every read and write off `state._rasterKey`, but nothing ever assigned it: the
+  scan writes `doc._rasterKey`, and the viewer only reset the state field to
+  `undefined`. There is a second half to it — a single dropped file is opened
+  straight from its object URL and paints before any text scan has hashed the
+  file, so even a correct state field would have been empty at the first paint.
+  The key is now resolved from the open document at the moment it is needed, the
+  single-file open path hashes the file itself, and that hash is awaited before
+  page 1 renders (it overlaps with `getDocument`). `e2e/raster-cache.spec.js`
+  fails without this.
+- **The text layer sat ~150 px off the glyphs on a `/Rotate 90` page.** The
+  ported CSS omitted `--scale-round-x` / `--scale-round-y`, which pdf.js 6 needs
+  for the inline `width: round(down, var(--total-scale-factor) * 612px, …)` it
+  writes on the layer. The declaration was invalid at computed-value time, so
+  `inset: 0` stretched the layer to the *landscape* page box while pdf.js lays
+  runs out in unrotated space; the rotation rule then mapped it to the wrong
+  place. Unrotated pages looked correct only because the two boxes coincide.
+  Caught by comparing span rects with the highlight marks, which come from the
+  viewport rather than from the CSS.
+- **Counts could be published from an incomplete keyword list.** The 6-vs-8
+  symptom that started this was *not* that race — page 1 of `one-kw.pdf` has six
+  keyword hits and the whole document eight, so it was the Phase 1 prefix count
+  doing its job. The real race is smaller but real: `processFiles()` could start
+  extracting before `keywords.json` had been applied, which counts every document
+  against an empty list and publishes a total nothing recomputes. Intake now
+  awaits `whenKeywordsReady()`; `e2e/keywords-race.spec.js` holds the window open
+  with a delayed `keywords.json` and fails when the gate is removed.
+
+### Automated in the browser now
+
+- `e2e/render-fidelity.spec.js` — `cmyk.pdf` (DeviceCMYK, three ink bands
+  checked by pixel), `jpx.pdf` (JPEG 2000 through openjpeg), `rotated.pdf`
+  (layer covers the canvas, runs derive their size from `--font-height` ×
+  `--total-scale-factor`, a real DOM selection matches the run), `userunit.pdf`
+  (`/UserUnit 2` measures 1224×1584 CSS px at 1:1), and every decoder asset the
+  build has to ship (`jbig2.wasm`, its JS fallback, `openjpeg.wasm`,
+  `qcms_bg.wasm`) answering 200.
+- `e2e/raster-cache.spec.js` — first open misses and stores; a reload and re-drop
+  of the same file paints with `data-raster-cached="1"` and non-empty pixels.
+- `e2e/keywords-race.spec.js` — a drop during keyword loading still counts with
+  the full list.
+
+### Not verified (needs a browser, see MANUAL-PASS.md)
+
+- **JBIG2 image fidelity.** No offline encoder here produces a JBIG2 stream
+  (ImageMagick and Ghostscript both decode it, neither encodes it), so only the
+  decoder assets are checked automatically. A real scanned drawing is still the
+  check that matters.
+- Firefox/Safari fallback, renderer worker presence in Chromium, and bounded
+  canvas/bitmap counts over a 50-page scroll.

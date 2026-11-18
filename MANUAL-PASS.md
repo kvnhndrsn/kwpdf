@@ -107,3 +107,58 @@ Browser: Chrome 1xx / Edge 1xx on <OS>
 
 Anything that looks wrong is more useful than a clean report — that is what
 these rows are for.
+
+## Performance phases 0–3 — manual checks
+
+Setup is the same as above (`python3 -m http.server 8895 --directory dist`).
+Build first (`node build.js && node .verify/make-fixtures.mjs`), and use a real
+drawing set for anything about rasterisation: `dist/fixtures/vector-heavy.pdf`
+is synthetic.
+
+### 1. Do the numbers point at rasterisation?
+
+1. Open `http://localhost:8895/index.html?perf=1`, drop the drawing, wait for the
+   sidebar counts to settle.
+2. Console: `__kwpdfPerf()` → the table; `__kwpdfPerfLongTasks()` → count/max.
+3. Expected shape (from the synthetic baseline): `pdf:precompute` a few ms,
+   `render:paint` tens of ms, and long tasks in the hundreds of ms while
+   scrolling. If `render:paint` is small and indexing is large instead, the
+   renderer worker is not the win — say so rather than keeping the conclusion.
+
+### 2. Renderer worker present (Chromium)
+
+Open `chrome://inspect/#workers` in a second tab. With a drawing open there
+should be two pdf.js workers: `pdf.worker.min.mjs` and `pdf.renderer.min.mjs`.
+Only one means the worker path is not being used — check for a failed request to
+`pdf.renderer.min.mjs` in the Network panel.
+
+### 3. Image fidelity after the upgrade (the risky one)
+
+Open a drawing that contains a scanned CMYK sheet, a JPX (JPEG 2000) image and a
+JBIG2 image. They must look the same as they did before the upgrade. A grey or
+missing image here means `wasm/` or `iccs/` is not being served.
+
+### 4. Rotated and `/UserUnit` selection
+
+On a `/Rotate 90` sheet and on a sheet with a `/UserUnit` other than 1:
+drag-select a line of text. The highlight must sit on the glyphs, not offset from
+them. This is what the `--total-scale-factor` port fixes.
+
+### 5. Memory over a long scroll
+
+Performance monitor (JS heap, DOM nodes) while scrolling 50+ pages of a dense
+drawing. Canvas counts must stay bounded; RSS should plateau.
+
+### 6. Raster cache across sessions
+
+Open a drawing, sit on a few pages (each needs to stay the current page for about
+a second so the idle encode runs), reload, re-drop the same file. Those pages
+should paint immediately (`data-raster-cached="1"` on the canvas) with no raster
+pass in `__kwpdfPerf()`. Then Application → IndexedDB → `kwpdf-raster-cache`: the
+store must stay under 64 MB / 60 entries after scrolling 200 pages.
+
+### 7. Firefox and Safari
+
+Open the same drawing. It must load, scroll, and land on the same first match.
+`RendererWorker` falls back to the main thread by itself; what matters is that
+the app behaves and the landing match is unchanged.

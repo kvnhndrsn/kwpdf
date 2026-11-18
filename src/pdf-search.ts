@@ -1,4 +1,11 @@
-import { state, isCurrentGeneration, beginSearch, isCurrentSearch, createSearchCache } from './state';
+import {
+    state,
+    isCurrentGeneration,
+    beginSearch,
+    isCurrentSearch,
+    createSearchCache,
+    createKeywordCounts,
+} from './state';
 import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { projectItemBox, unionBoxes, sameTextLine } from './pdf-coords';
@@ -186,54 +193,297 @@ export function computeMatchCoords(matchStart, matchEnd, viewport, textItems, of
     return { x: first.x, y: first.y, width: first.width, height: first.height, boxes };
 }
 
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/** How long the foreground pass may spend before giving up on a first match. */
+const PREFIX_BUDGET_MS = 50;
+/** Slice length for the background pass, so each slice stays a short task. */
+const TAIL_SLICE_MS = 8;
+/** Minimum gap between count/DOM updates during the background pass. */
+const TAIL_EMIT_MS = 200;
+
+/** Background indexing state for the open document. */
+interface PrecomputeCursor {
+    generation: number;
+    /** Next page to scan from its first character. */
+    nextPage: number;
+    /** Canonical spelling of an explicitly requested keyword, or ''. */
+    preferred: string;
+}
+let precomputeCursor: PrecomputeCursor | null = null;
+let tailRunning = false;
+let activeSearchDirty = false;
+// Memoised flattening of every keyword's matches, invalidated whenever the
+// cache changes size or the document does.
+let allKeywordCache: { source: any; signature: string; results: any[] } | null = null;
+
+/**
+ * Scan one page for every keyword and append its matches to the cache.
+ *
+ * The regex is re-acquired for every page on purpose. `getKeywordRegex()`
+ * hands back one shared global regex and resets `lastIndex` on **every** call,
+ * so a concurrent `countKeywordMatches()` (a drop-scan, or the batch counter)
+ * would otherwise rewind this page to offset 0 and duplicate every match
+ * already collected. A page passed to this function is always scanned to its
+ * end, which is also what keeps each keyword's array in page/text order without
+ * a re-sort.
+ *
+ * Returns the matches this page produced, in scan order, so a background pass
+ * can append the ones belonging to the active search without re-reading the
+ * cache.
+ */
+async function scanPage(pageNum: number, generation: number): Promise<Array<{ keyword: string; result: any }>> {
+    const cached = state.textPageCache[pageNum];
+    if (!cached) return [];
+
+    if (!cached.items) await fetchPageItems(pageNum);
+    if (!isCurrentGeneration(generation)) return [];
+    const textItems = cached.items;
+    if (!textItems || textItems.length === 0) return [];
+
+    const regex = getKeywordRegex(KEYWORDS);
+    if (!regex) return [];
+
+    const offsetMap = buildOffsetMap(textItems);
+    const pushed: Array<{ keyword: string; result: any }> = [];
+
+    let match;
+    while ((match = regex.exec(cached.text)) !== null) {
+        const canonical = normalizeKeywordMatch(match, KEYWORDS);
+        if (!canonical) continue;
+
+        if (state.searchCache[canonical] === undefined) state.searchCache[canonical] = [];
+
+        const coords = computeMatchCoords(
+            match.index,
+            match.index + match[0].length,
+            cached.viewport,
+            textItems,
+            offsetMap,
+        );
+        const result = { page: pageNum, ...coords };
+        state.searchCache[canonical].push(result);
+        pushed.push({ keyword: canonical, result });
+    }
+
+    return pushed;
+}
+
+/** Append tail matches, but only ones newer than the current match position. */
+function appendTailResults(pushed: Array<{ keyword: string; result: any }>): void {
+    const active = state.activeKeyword;
+    if (!active || state.allKeywordMode) return;
+    for (const { keyword, result } of pushed) {
+        if (keyword !== active) continue;
+        // Appended, never inserted: tail matches are always on later pages, so
+        // every existing index — and the object `currentMatchIndex` points at —
+        // keeps its position and the current highlight does not jump.
+        state.searchResults.push(result);
+        activeSearchDirty = true;
+    }
+}
+
+/** Publish appended matches to the counter, the marks and the status. */
+function flushActiveSearch(): void {
+    if (!activeSearchDirty) return;
+    activeSearchDirty = false;
+    buildSearchResultsByPage();
+    if (dom.matchTotal) dom.matchTotal.textContent = String(state.searchResults.length);
+    if (dom.matchInput) dom.matchInput.max = String(state.searchResults.length);
+    renderAllHighlights();
+}
+
+/**
+ * Mark the document fully indexed and republish everything derived from the
+ * counts. Called exactly once per generation, by whichever pass got to the last
+ * page.
+ */
+function finishIndexing(): void {
+    state.searchDeduplicated = true;
+    // `_gsPageCacheReady` still means "fully indexed": global search and
+    // cycle-all-keyword depend on the whole document, not just the prefix.
+    state._gsPageCacheReady = true;
+    // The flattened all-keyword list is memoised by cache identity + totals.
+    allKeywordCache = null;
+    setIndexingFlag(false);
+
+    // Counts were published from the prefix, so the tree row and the totals are
+    // understated until this runs.
+    const doc = state.docDataCache[state.currentDocUrl];
+    if (doc) {
+        const counts = createKeywordCounts();
+        for (const [kw, matches] of Object.entries(state.searchCache)) counts[kw] = matches.length;
+        // OCR hits are added on top of the text counts here for the same reason
+        // renderCard() does it: overwriting would silently drop them.
+        if (doc._ocrCounts) {
+            for (const [kw, c] of Object.entries(doc._ocrCounts)) counts[kw] = (counts[kw] || 0) + c;
+        }
+        doc.counts = counts;
+    }
+
+    flushActiveSearch();
+    state.emit('keywords-changed');
+    state.emit('stats-changed');
+    state.emit('badge-changed');
+    state.emit('results-changed');
+}
+
+/**
+ * Publish "this document is still being indexed" for the UI and for tests.
+ *
+ * The match counter's *text* is never decorated: callers parse it as a number.
+ * The flag lives on the attribute instead.
+ */
+function setIndexingFlag(on: boolean): void {
+    if (typeof document === 'undefined' || !document.body) return;
+    document.body.dataset.indexing = on ? '1' : '0';
+    const total = dom.matchTotal as HTMLElement | null;
+    if (!total) return;
+    total.setAttribute('aria-busy', on ? 'true' : 'false');
+    if (on) total.title = 'Indexing: the match count is still growing';
+    else total.removeAttribute('title');
+}
+
+/** Full scan. Unchanged behaviour; it is the fallback when the prefix cannot help. */
 export async function precomputeAllSearches() {
     if (state.searchDeduplicated) return;
 
-    const combinedRegex = getKeywordRegex(KEYWORDS);
-
-    if (!combinedRegex) {
+    if (!getKeywordRegex(KEYWORDS)) {
         state.searchDeduplicated = true;
+        state._gsPageCacheReady = true;
         state.emit('keywords-changed');
         return;
     }
 
     const generation = state.docGeneration;
+    precomputeCursor = null;
 
     for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
-        const cached = state.textPageCache[pageNum];
-        if (!cached) continue;
-
-        const pageText = cached.text;
-        const viewport = cached.viewport;
-
-        if (!cached.items) await fetchPageItems(pageNum);
+        await scanPage(pageNum, generation);
         if (!isCurrentGeneration(generation)) return;
-        const textItems = cached.items;
-        if (!textItems || textItems.length === 0) continue;
-
-        const offsetMap = buildOffsetMap(textItems);
-
-        let match;
-        while ((match = combinedRegex.exec(pageText)) !== null) {
-            const canonical = normalizeKeywordMatch(match, KEYWORDS);
-            if (!canonical) continue;
-
-            if (state.searchCache[canonical] === undefined) state.searchCache[canonical] = [];
-
-            const coords = computeMatchCoords(
-                match.index,
-                match.index + match[0].length,
-                viewport,
-                textItems,
-                offsetMap,
-            );
-            state.searchCache[canonical].push({ page: pageNum, ...coords });
-        }
     }
 
     if (!isCurrentGeneration(generation)) return;
-    state.searchDeduplicated = true;
-    state.emit('keywords-changed');
+    finishIndexing();
+}
+
+/**
+ * Index just far enough to land on the first match, then hand the rest to
+ * `precomputeRemaining()`.
+ *
+ * The landing target is decided by cache insertion order, exactly as the full
+ * scan decides it: the first page that produces a match inserts its keyword
+ * first, so `loadPDF`'s "first keyword with entries" rule picks the same
+ * keyword, and `performSearch()` → `goToMatch(0)` lands on the same occurrence.
+ *
+ * @returns `needsTail` false when indexing already finished (no keywords, a
+ *   scan that reached the last page, or the no-match fallback), true when a
+ *   background pass remains.
+ */
+export async function precomputePrefix(
+    options: { preferredKeyword?: string; budgetMs?: number } = {},
+): Promise<{ needsTail: boolean }> {
+    const { preferredKeyword = '', budgetMs = PREFIX_BUDGET_MS } = options;
+
+    if (state.searchDeduplicated) return { needsTail: false };
+
+    if (!getKeywordRegex(KEYWORDS)) {
+        state.searchDeduplicated = true;
+        state._gsPageCacheReady = true;
+        state.emit('keywords-changed');
+        return { needsTail: false };
+    }
+
+    const generation = state.docGeneration;
+    precomputeCursor = null;
+
+    // Resolve the requested keyword to the spelling the cache will use, so
+    // `loadPDF(url, 'tender')` finds the entries filed under 'Tender'.
+    let preferred = '';
+    if (preferredKeyword) {
+        const lower = preferredKeyword.toLowerCase();
+        preferred = (KEYWORDS || []).find((k) => k.toLowerCase() === lower) || preferredKeyword;
+    }
+
+    const started = nowMs();
+    setIndexingFlag(true);
+
+    for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
+        const pushed = await scanPage(pageNum, generation);
+        if (!isCurrentGeneration(generation)) return { needsTail: false };
+
+        const landed = preferred ? pushed.some((p) => p.keyword === preferred) : pushed.length > 0;
+
+        if (landed) {
+            if (pageNum >= state.totalPages) {
+                finishIndexing();
+                return { needsTail: false };
+            }
+            precomputeCursor = { generation, nextPage: pageNum + 1, preferred };
+            return { needsTail: true };
+        }
+
+        // Nothing to land on yet and the budget is gone: only the full scan can
+        // tell a no-match document from a slow one. Nothing was pushed, so it
+        // cannot duplicate a match.
+        if (nowMs() - started > budgetMs) break;
+    }
+
+    await precomputeAllSearches();
+    return { needsTail: false };
+}
+
+/**
+ * Scan the remaining pages in short slices and fold the results into the active
+ * search as they arrive.
+ *
+ * Yields with `setTimeout` rather than `requestAnimationFrame`: a hidden tab
+ * pauses rAF, which would leave the document half-indexed until it is shown.
+ */
+export async function precomputeRemaining(): Promise<void> {
+    const cursor = precomputeCursor;
+    if (!cursor || tailRunning || state.searchDeduplicated) return;
+
+    const generation = cursor.generation;
+    if (!isCurrentGeneration(generation)) {
+        precomputeCursor = null;
+        return;
+    }
+
+    tailRunning = true;
+    precomputeCursor = null;
+    let lastEmit = nowMs();
+
+    try {
+        while (cursor.nextPage <= state.totalPages) {
+            const sliceStart = nowMs();
+            while (cursor.nextPage <= state.totalPages && nowMs() - sliceStart < TAIL_SLICE_MS) {
+                const pageNum = cursor.nextPage++;
+                const pushed = await scanPage(pageNum, generation);
+                if (!isCurrentGeneration(generation)) return;
+                appendTailResults(pushed);
+            }
+
+            if (!isCurrentGeneration(generation)) return;
+
+            if (nowMs() - lastEmit >= TAIL_EMIT_MS) {
+                lastEmit = nowMs();
+                flushActiveSearch();
+            }
+
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+
+        if (!isCurrentGeneration(generation)) return;
+        finishIndexing();
+    } finally {
+        tailRunning = false;
+    }
+}
+
+/** True while the background pass for the open document is still running. */
+export function isIndexing(): boolean {
+    return tailRunning || !!precomputeCursor;
 }
 
 async function computeSearchForQuery(query) {
@@ -336,8 +586,6 @@ function appendOcrResults(keyword) {
         }
     }
 }
-
-let allKeywordCache: { source: any; signature: string; results: any[] } | null = null;
 
 function allKeywordResults(): any[] {
     const cache = state.searchCache;

@@ -69,6 +69,13 @@ html = html.replace(BUILD_TARGET_MARKER, '/* BUILD_TARGET */ true');
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 
 copy('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'pdf.worker.min.mjs');
+// pdf.js 6 draws onto an OffscreenCanvas in a second worker. It must come from
+// the same package version as the API: pdf.js refuses a mismatched renderer.
+copy('node_modules/pdfjs-dist/build/pdf.renderer.min.mjs', 'pdf.renderer.min.mjs');
+// WebAssembly decoders (JPX, JBIG2, ICC, CMYK→RGB) and the predefined ICC
+// profiles. Without them those images in a real drawing degrade or fail.
+copy('node_modules/pdfjs-dist/wasm', 'wasm');
+copy('node_modules/pdfjs-dist/iccs', 'iccs');
 // pdf.js needs these next to the app: CMaps for CJK/encoded fonts and
 // standard_fonts for the base-14 fonts that PDFs usually leave unembedded.
 copy('node_modules/pdfjs-dist/cmaps', 'cmaps');

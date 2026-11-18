@@ -131,6 +131,8 @@ export interface DocDataCacheEntry {
     _ocrTotalMatches?: number;
     /** Identity of the dropped file, so a re-drop of it can be skipped. */
     _dedupeKey?: string;
+    /** SHA-256 + name key from `cacheKey()`, used to key the raster cache. */
+    _rasterKey?: string;
 }
 
 // ── Keyword / list types ──
@@ -224,7 +226,14 @@ export interface State {
     _gsPos: number;
 
     allKeywordMode: boolean;
+    /** The open document can be read, scrolled and navigated: the loader is
+     *  gone. Set before the whole document has necessarily been indexed. */
+    _pdfInteractive?: boolean;
+    /** Every keyword has been indexed for the open document. Gates global
+     *  search and cycle-all-keyword, which need the whole document. */
     _gsPageCacheReady?: boolean;
+    /** Raster-cache key of the open document (file hash + name), if known. */
+    _rasterKey?: string;
     _docPageHtmls?: string[];
     _docPageOffsets?: number[];
     inlineSearchActive?: boolean;

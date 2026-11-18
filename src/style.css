@@ -1081,15 +1081,45 @@ input, select, button, textarea {
     opacity: 1; line-height: 1.0; z-index: 2;
     pointer-events: none;
     --scale-factor: 1;
+    /*
+     * pdf.js 6 lays every run out through --total-scale-factor (zoom x the
+     * page's /UserUnit) and sizes it from --font-height, which it writes onto
+     * each span. --scale-factor is only an input to that now, so the v4 rules
+     * (a plain font-size on the span) leave the layer misaligned.
+     */
+    --user-unit: 1;
+    --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+    /*
+     * pdf.js 6 sets the layer's width/height inline as
+     * `round(down, var(--total-scale-factor) * 612px, var(--scale-round-x))`.
+     * Without these two properties the round() is invalid at computed-value
+     * time, the declaration is dropped, and `inset: 0` stretches the layer to
+     * the page box instead of leaving it at the UNROTATED page size that the
+     * rotation rules below expect. On a /Rotate 90 page that put every run ~150
+     * px away from its glyph; unrotated pages looked fine by coincidence.
+     */
+    --scale-round-x: 1px;
+    --scale-round-y: 1px;
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
     text-align: initial; transform-origin: 0 0;
     -webkit-text-size-adjust: none;
     text-size-adjust: none;
     forced-color-adjust: none;
+    color-scheme: only light;
 }
 .textLayer :is(span, br) {
     color: transparent; position: absolute; white-space: pre; cursor: text;
     transform-origin: 0% 0%; pointer-events: auto; user-select: text;
     -webkit-user-select: text;
+    /* Written per span by pdf.js 6; the defaults keep a span that arrives
+       without them (an older cached layer) laid out instead of invisible. */
+    --font-height: 0;
+    --scale-x: 1;
+    --rotate: 0deg;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
 .textLayer ::selection { background: rgba(0, 0, 255, 0.3); }
 

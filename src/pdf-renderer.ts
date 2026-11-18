@@ -4,6 +4,15 @@ import { fn } from './cross';
 import { processTextContentAsync } from './pdf-search';
 import { fitScaleForPixels } from './canvas-budget';
 import { getRawTextContent, putRawTextContent, clearRawTextContent } from './raw-text-store';
+import {
+    readRaster,
+    writeRaster,
+    rasterKey,
+    scaleBucket,
+    RASTER_CACHE_VERSION,
+    MAX_STORED_RASTER_PIXELS,
+} from './raster-store';
+import { mark as perfMark, measure as perfMeasure } from './perf';
 import { TextLayer } from 'pdfjs-dist';
 
 function scheduleIdle(fn, timeout = 300) {
@@ -97,7 +106,9 @@ export function teardownPdf() {
 
     if (state.pdfDoc) {
         try {
-            state.pdfDoc.destroy();
+            // pdf.js 6 removed PDFDocumentProxy.destroy(). The loading task owns
+            // the worker, so this is the only call that actually releases it.
+            state.pdfDoc.loadingTask.destroy();
         } catch (e) {
             console.warn('Error destroying previous PDF:', e);
         }
@@ -410,6 +421,141 @@ async function refreshVisiblePages() {
     }
 }
 
+// ── raster cache ──
+
+/**
+ * The open document's content key, whichever side of the scan published it.
+ *
+ * A single dropped file is painted before its text scan has hashed the file, so
+ * `state._rasterKey` can still be empty when the first render finishes; the key
+ * lands on the document entry instead. Read both rather than assume an order.
+ */
+function currentRasterKey(): string | undefined {
+    return state.docDataCache[state.currentDocUrl]?._rasterKey || state._rasterKey;
+}
+
+function rasterKeyFor(pageNum: number, renderScale: number, dpr: number): string | null {
+    return rasterKey(currentRasterKey(), pageNum, renderScale, dpr, state.renderQuality);
+}
+
+/**
+ * Paint a bitmap cached by an earlier session, or return false.
+ *
+ * This stands in for the raster pass only. Text, highlights and geometry still
+ * come from the live document exactly as they do after a real render, so
+ * nothing that reads them can tell the difference — and a changed file can
+ * never hit, because the file hash is part of the key.
+ */
+async function tryCachedRaster(
+    el: HTMLElement,
+    pageNum: number,
+    vp1: any,
+    renderScale: number,
+    dpr: number,
+    generation: number,
+    token: any,
+): Promise<boolean> {
+    if (typeof createImageBitmap !== 'function') return false;
+
+    const key = rasterKeyFor(pageNum, renderScale, dpr);
+    if (!key) return false;
+
+    const entry = await readRaster(key);
+    if (!entry) return false;
+    if (!isCurrentGeneration(generation) || renderTokens.get(pageNum) !== token) return false;
+
+    let bitmap: ImageBitmap | null = null;
+    try {
+        bitmap = await createImageBitmap(entry.blob);
+    } catch (e) {
+        return false;
+    }
+    if (!bitmap) return false;
+    if (!isCurrentGeneration(generation) || renderTokens.get(pageNum) !== token) {
+        bitmap.close();
+        return false;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = getCanvasContext(canvas);
+    if (!ctx || !canvas.width || !canvas.height) {
+        bitmap.close();
+        return false;
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    // The canvas owns its own copy; release the decoded bitmap immediately.
+    bitmap.close();
+
+    canvas.style.width = vp1.width * state.currentScale + 'px';
+    canvas.style.height = vp1.height * state.currentScale + 'px';
+    canvas.dataset.scale = String(renderScale);
+    canvas.dataset.rasterCached = '1';
+
+    el.innerHTML = '';
+    el.appendChild(canvas);
+    state.renderedPages.add(pageNum);
+    state.renderedScales[pageNum] = Math.max(state.renderedScales[pageNum] || 0, renderScale);
+    return true;
+}
+
+/** How long a page has to stay put before its bitmap is worth encoding. */
+const RASTER_STORE_DELAY_MS = 600;
+
+/**
+ * Encode a finished render for the next session.
+ *
+ * Deliberately narrow: the current page only, on idle, never while the tab is
+ * hidden, and never above the pixel cap. Encoding a large canvas is itself a
+ * main-thread cost, and adding one to the workload this work exists to speed up
+ * would be self-defeating.
+ */
+function scheduleRasterStore(
+    canvas: HTMLCanvasElement,
+    pageNum: number,
+    renderScale: number,
+    dpr: number,
+    generation: number,
+): void {
+    if (typeof canvas.toBlob !== 'function') return;
+    if (!canvas.width || !canvas.height) return;
+    if (canvas.width * canvas.height > MAX_STORED_RASTER_PIXELS) return;
+    if (document.hidden || pageNum !== state.currentPage) return;
+
+    scheduleIdle(() => {
+        if (!isCurrentGeneration(generation)) return;
+        if (document.hidden || pageNum !== state.currentPage) return;
+        if (!canvas.isConnected) return;
+        // Resolved when the frame goes idle, not when the render finished: the
+        // scan that produces the key can still be running at that point.
+        const key = rasterKeyFor(pageNum, renderScale, dpr);
+        if (!key) return;
+        try {
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob || !isCurrentGeneration(generation)) return;
+                    void writeRaster({
+                        key,
+                        v: RASTER_CACHE_VERSION,
+                        page: pageNum,
+                        scale: scaleBucket(renderScale),
+                        dpr,
+                        quality: state.renderQuality,
+                        blob,
+                        savedAt: Date.now(),
+                        _size: blob.size,
+                    });
+                },
+                'image/webp',
+                0.85,
+            );
+        } catch (e) {
+            // The cache is optional; never let it break a render.
+        }
+    }, RASTER_STORE_DELAY_MS);
+}
+
 // ── render a single page ──
 
 export async function renderPageNow(pageNum: number, forceScale: number = null) {
@@ -426,7 +572,9 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
     renderTokens.set(pageNum, token);
 
     try {
+        perfMark('render:getPage:start');
         const page = await state.pdfDoc.getPage(pageNum);
+        perfMeasure('render:getPage', 'render:getPage:start');
         if (!isCurrentGeneration(generation)) return;
         if (renderTokens.get(pageNum) !== token) return;
 
@@ -454,6 +602,18 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
         el.style.setProperty('--base-w', vp1.width);
         el.style.setProperty('--base-h', vp1.height);
         el.style.position = 'relative';
+
+        // A bitmap from an earlier session at this exact bucket *is* the
+        // render: no drawing operators run at all.
+        if (await tryCachedRaster(el, pageNum, vp1, renderScale, dpr, generation, token)) {
+            if (state.textPageCache[pageNum]) {
+                requestAnimationFrame(() => buildTextLayer(el, pageNum));
+                if (!forceScale && state.searchResults.length > 0) {
+                    scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
+                }
+            }
+            return;
+        }
 
         const existingCanvas = el.querySelector('canvas');
         const hasCanvas = !!existingCanvas;
@@ -485,7 +645,9 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
 
         const renderTask = page.render({ canvasContext: ctx, viewport: viewport });
         state.renderTasks.set(pageNum, renderTask);
+        perfMark('render:paint:start');
         await renderTask.promise;
+        perfMeasure('render:paint', 'render:paint:start');
 
         if (!isCurrentGeneration(generation)) return;
         if (renderTokens.get(pageNum) !== token) return;
@@ -506,11 +668,15 @@ export async function renderPageNow(pageNum: number, forceScale: number = null) 
             if (!forceScale && state.searchResults.length > 0) scheduleIdle(() => fn.renderHighlightsForPage(pageNum));
         }
 
+        scheduleRasterStore(canvas, pageNum, renderScale, dpr, generation);
+
         // Fire-and-forget text content fetch for text layer & highlights.
         // On resolve, rebuild text layer & highlights if page is still displayed.
         if (!state.textPageCache[pageNum]) {
+            perfMark('render:text:start');
             page.getTextContent()
                 .then(async (textContent) => {
+                    perfMeasure('render:text', 'render:text:start');
                     const processed = await processTextContentAsync(textContent);
                     if (!isCurrentGeneration(generation)) return;
                     if (renderTokens.get(pageNum) !== token) return;
@@ -614,6 +780,11 @@ function buildTextLayer(el, pageNum) {
             const textLayer = document.createElement('div');
             textLayer.className = 'textLayer';
             textLayer.style.setProperty('--scale-factor', String(scale));
+            // pdf.js 6 sizes runs as --total-scale-factor = zoom x /UserUnit.
+            // A page whose unit is not 1 (common on engineering sheets) lays
+            // every glyph out at the wrong size unless it is told.
+            textLayer.style.setProperty('--user-unit', String((viewport as any).userUnit || 1));
+            textLayer.dataset.mainRotation = String(viewport.rotation || 0);
             el.appendChild(textLayer);
 
             const layer = new TextLayer({ textContentSource: raw, container: textLayer, viewport });
@@ -665,8 +836,11 @@ async function updateTextLayersAtScale(scale) {
             const page = await state.pdfDoc.getPage(pageNum);
             if (!isCurrentGeneration(generation)) return;
             if (textLayers.get(pageNum)?.layer !== ref.layer) continue;
+            const viewport = page.getViewport({ scale });
             ref.div.style.setProperty('--scale-factor', String(scale));
-            ref.layer.update({ viewport: page.getViewport({ scale }) });
+            ref.div.style.setProperty('--user-unit', String((viewport as any).userUnit || 1));
+            ref.div.dataset.mainRotation = String(viewport.rotation || 0);
+            ref.layer.update({ viewport });
         } catch (e) {}
     }
 }

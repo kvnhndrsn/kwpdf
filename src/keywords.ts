@@ -1,7 +1,7 @@
 import { state, createSearchCache } from './state';
 import * as dom from './dom';
 import { clearKeywordRegexCache } from './keyword-regex';
-import { fn, setKeywords, setKeywordLists, setDefaultListName } from './cross';
+import { fn, setKeywords, setKeywordLists, setDefaultListName, markKeywordsReady } from './cross';
 
 let DEFAULT_LIST_NAME = 'Central Supply-Only';
 // Set when keywords.json could not be fetched or parsed. The app keeps running
@@ -80,6 +80,9 @@ export async function loadKeywords() {
         keywordLoadError = e && e.message ? e.message : String(e);
     }
     syncToBus();
+    // Even a failed load releases intake: the app must still open documents,
+    // and showKeywordLoadError() tells the user why nothing matched.
+    markKeywordsReady();
 }
 
 function loadCustomLists() {

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// The prefix/tail paths publish results through pdf-highlights, which needs a DOM.
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
     processTextContent,
@@ -6,10 +8,13 @@ import {
     findEndItem,
     computeMatchCoords,
     precomputeAllSearches,
+    precomputePrefix,
+    precomputeRemaining,
+    isIndexing,
 } from '../pdf-search';
 import { state } from '../state';
 import { setKeywords } from '../cross';
-import { clearKeywordRegexCache } from '../keyword-regex';
+import { clearKeywordRegexCache, getKeywordRegex } from '../keyword-regex';
 
 describe('processTextContent', () => {
     it('handles empty items', () => {
@@ -345,5 +350,183 @@ describe('precomputeAllSearches', () => {
         // opened document would skip its own precompute.
         expect(state.searchDeduplicated).toBe(false);
         expect(state.searchCache.world).toBeUndefined();
+    });
+});
+
+// ── prefix / tail indexing ──
+
+function cachePage(text, y = 700) {
+    return {
+        text,
+        viewport: { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] },
+        items: [{ text, transform: [10, 0, 0, 10, 0, y], width: Math.max(text.length * 5, 4), height: 10 }],
+    };
+}
+
+function resetSearchState() {
+    state.searchCache = Object.create(null);
+    state.searchDeduplicated = false;
+    state.textPageCache = {};
+    state.totalPages = 0;
+    state.docGeneration = 0;
+    state.pdfDoc = null;
+    state.searchResults = [];
+    state.activeKeyword = '';
+    state.currentMatchIndex = -1;
+    state.allKeywordMode = false;
+    state._gsPageCacheReady = false;
+    state._pdfInteractive = false;
+    state.currentDocUrl = '';
+    state.docDataCache = {};
+}
+
+describe('precomputePrefix', () => {
+    beforeEach(() => {
+        resetSearchState();
+        setKeywords(['alpha']);
+        clearKeywordRegexCache();
+    });
+
+    it('stops at the first page with a match and leaves the tail behind', async () => {
+        state.totalPages = 5;
+        for (let p = 1; p <= 5; p++) state.textPageCache[p] = cachePage(p >= 4 ? 'alpha here' : 'nothing at all');
+
+        const { needsTail } = await precomputePrefix({ budgetMs: 1000 });
+
+        expect(needsTail).toBe(true);
+        expect(state.searchCache.alpha).toHaveLength(1);
+        expect(state.searchCache.alpha[0].page).toBe(4);
+        // Interactive is not indexed: the landing jump is ready, the counts are not.
+        expect(state.searchDeduplicated).toBe(false);
+        expect(state._gsPageCacheReady).toBe(false);
+        expect(isIndexing()).toBe(true);
+    });
+
+    it('falls back to the full scan when nothing matches and the budget expires', async () => {
+        state.totalPages = 4;
+        for (let p = 1; p <= 4; p++) state.textPageCache[p] = cachePage('nothing at all');
+
+        const { needsTail } = await precomputePrefix({ budgetMs: 0 });
+
+        expect(needsTail).toBe(false);
+        expect(state.searchDeduplicated).toBe(true);
+        expect(state._gsPageCacheReady).toBe(true);
+    });
+
+    it('lands on the requested keyword rather than the first one in the document', async () => {
+        setKeywords(['alpha', 'beta']);
+        clearKeywordRegexCache();
+        state.totalPages = 3;
+        state.textPageCache[1] = cachePage('alpha alpha');
+        state.textPageCache[2] = cachePage('nothing');
+        state.textPageCache[3] = cachePage('beta here');
+
+        // Requested keyword spelled differently from the list: it must still
+        // resolve to the list's spelling.
+        const { needsTail } = await precomputePrefix({ preferredKeyword: 'BETA', budgetMs: 1000 });
+
+        expect(needsTail).toBe(false);
+        expect(state.searchCache.beta).toHaveLength(1);
+        expect(state.searchCache.beta[0].page).toBe(3);
+        // Earlier keyword matches are still recorded — they are not skipped.
+        expect(state.searchCache.alpha).toHaveLength(2);
+    });
+});
+
+describe('precomputeRemaining', () => {
+    beforeEach(() => {
+        resetSearchState();
+        setKeywords(['alpha']);
+        clearKeywordRegexCache();
+    });
+
+    it('finishes the document without duplicating a match', async () => {
+        state.totalPages = 3;
+        state.textPageCache[1] = cachePage('nothing');
+        state.textPageCache[2] = cachePage('alpha');
+        state.textPageCache[3] = cachePage('alpha two');
+
+        await precomputePrefix({ budgetMs: 1000 });
+        expect(state.searchCache.alpha).toHaveLength(1);
+
+        await precomputeRemaining();
+
+        expect(state.searchCache.alpha.map((r) => r.page)).toEqual([2, 3]);
+        expect(state.searchDeduplicated).toBe(true);
+        expect(state._gsPageCacheReady).toBe(true);
+        expect(isIndexing()).toBe(false);
+    });
+
+    it('cannot be tripped by the shared regex being reset mid-run', async () => {
+        state.totalPages = 4;
+        state.textPageCache[1] = cachePage('alpha');
+        state.textPageCache[2] = cachePage('alpha');
+        state.textPageCache[3] = cachePage('alpha');
+        state.textPageCache[4] = cachePage('alpha');
+
+        await precomputePrefix({ budgetMs: 1000 });
+        // Every lookup resets lastIndex on the shared instance, which is exactly
+        // what a concurrent drop-scan does while the tail is running.
+        getKeywordRegex(['alpha']);
+        getKeywordRegex(['alpha']);
+
+        await precomputeRemaining();
+
+        expect(state.searchCache.alpha.map((r) => r.page)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('appends to the active search without moving the current match', async () => {
+        state.totalPages = 3;
+        state.textPageCache[1] = cachePage('alpha');
+        state.textPageCache[2] = cachePage('nothing');
+        state.textPageCache[3] = cachePage('alpha again');
+
+        await precomputePrefix({ budgetMs: 1000 });
+        state.activeKeyword = 'alpha';
+        state.searchResults = [...state.searchCache.alpha];
+        state.currentMatchIndex = 0;
+        const current = state.searchResults[0];
+
+        await precomputeRemaining();
+
+        expect(state.searchResults).toHaveLength(2);
+        // Same object, same index: the highlight and scroll do not jump.
+        expect(state.searchResults[0]).toBe(current);
+        expect(state.currentMatchIndex).toBe(0);
+    });
+
+    it('abandons the tail when the document changes', async () => {
+        state.totalPages = 3;
+        state.textPageCache[1] = cachePage('alpha');
+        state.textPageCache[2] = cachePage('alpha');
+        state.textPageCache[3] = cachePage('alpha');
+
+        await precomputePrefix({ budgetMs: 1000 });
+        state.docGeneration++;
+
+        await precomputeRemaining();
+
+        expect(state.searchDeduplicated).toBe(false);
+        expect(state.searchCache.alpha).toHaveLength(1);
+    });
+
+    it('publishes completed counts for the open document', async () => {
+        state.currentDocUrl = 'blob:doc';
+        state.docDataCache['blob:doc'] = {
+            name: 'a.pdf',
+            counts: { alpha: 1 },
+            folder: '',
+            fullPath: 'a.pdf',
+            url: 'blob:doc',
+            type: 'pdf',
+        };
+        state.totalPages = 2;
+        state.textPageCache[1] = cachePage('alpha');
+        state.textPageCache[2] = cachePage('alpha');
+
+        await precomputePrefix({ budgetMs: 1000 });
+        await precomputeRemaining();
+
+        expect(state.docDataCache['blob:doc'].counts.alpha).toBe(2);
     });
 });

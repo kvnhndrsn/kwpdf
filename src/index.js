@@ -5,6 +5,11 @@ import * as pdfjsLib from 'pdfjs-dist';
 const scriptUrl = document.currentScript && document.currentScript.src;
 const basePath = scriptUrl ? scriptUrl.substring(0, scriptUrl.lastIndexOf('/') + 1) : './';
 pdfjsLib.GlobalWorkerOptions.workerSrc = basePath + 'pdf.worker.min.mjs';
+// Canvas drawing runs in a second, *sibling* worker in pdf.js 6 — not a nested
+// one, so it is not limited to browsers that support nested workers. pdf.js
+// falls back to the main thread by itself when the platform or the document
+// cannot use it, so there is nothing to detect here.
+pdfjsLib.GlobalWorkerOptions.rendererSrc = basePath + 'pdf.renderer.min.mjs';
 
 setPdfjsLib(pdfjsLib);
 setJSZip(JSZip);
@@ -26,6 +31,7 @@ import * as ui from './ui';
 import * as keywords from './keywords';
 import * as ocr from './ocr';
 import * as measure from './measure';
+import { dumpPerf, dumpLongTasks, perfEnabled } from './perf';
 import { CustomDropdown } from './dropdown';
 
 register('setupVirtualPages', pdfRenderer.setupVirtualPages);
@@ -133,6 +139,28 @@ state.on('results-changed', fn.renderResultsArea);
 state.on('stats-changed', fn.updateStats);
 state.on('badge-changed', fn.updateSidebarBadge);
 state.on('keywords-changed', fn.populateKeywordSelect);
+
+// Only when instrumented: `?perf=1` (or localStorage) enables the marks.
+if (perfEnabled()) {
+    window.__kwpdfPerf = dumpPerf;
+    window.__kwpdfPerfLongTasks = dumpLongTasks;
+}
+
+// A newly built service worker takes over mid-load (skipWaiting/clients.claim).
+// Without a reload the document can keep the previous build's markup while its
+// CSS/JS are already fresh — the toolbar looked wrong until a manual refresh.
+// Reload once when a *replacement* worker takes over. The first-ever claim has
+// no old controller to replace, so it is skipped.
+if ('serviceWorker' in navigator) {
+    let skipFirstClaim = !navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (skipFirstClaim) {
+            skipFirstClaim = false;
+            return;
+        }
+        window.location.reload();
+    });
+}
 
 ocr.initOcr();
 

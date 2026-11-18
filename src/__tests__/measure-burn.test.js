@@ -350,7 +350,7 @@ describe('burnMeasurementsIntoPdf', () => {
             expect(text).toContain('SEE DETAIL 3');
             expect(text).toContain('original');
         } finally {
-            await pdf.destroy();
+            await pdf.loadingTask.destroy();
         }
     });
 

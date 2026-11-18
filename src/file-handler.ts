@@ -3,7 +3,7 @@ import * as dom from './dom';
 import { getKeywordRegex, normalizeKeywordMatch } from './keyword-regex';
 import { processTextContentAsync } from './pdf-search';
 import { estimatePagesSize, estimateTextEntrySize } from './cache-size';
-import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS, basePath } from './cross';
+import { fn, pdfjsLib, JSZip, mammoth, KEYWORDS, basePath, whenKeywordsReady } from './cross';
 import { htmlToText } from './html-text';
 import { cacheKey, readStoredText, storePdfText, storeDocxText } from './text-store';
 
@@ -233,6 +233,18 @@ export function countKeywordMatches(texts: string[], keywords = KEYWORDS || []) 
     return { counts, total };
 }
 
+/**
+ * Remember the file's content key so the raster cache can key its bitmaps.
+ * `cachePdfEntry` rebuilds the doc entry, so this must run after it.
+ */
+function rememberRasterKey(url, key) {
+    const doc = state.docDataCache[url];
+    if (doc && key) (doc as any)._rasterKey = key;
+    // The document may already be open (a single dropped file paints before its
+    // scan finishes), so the viewer's copy has to learn the key too.
+    if (key && url === state.currentDocUrl) state._rasterKey = key;
+}
+
 /** Store a PDF's page text under `id` and publish its counts. */
 function cachePdfEntry(id, fileName, pageTextData, file) {
     const { counts, total: totalMatches } = countKeywordMatches(pageTextData.map((p) => p.text || ''));
@@ -299,12 +311,14 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
         if (storedKey) {
             const stored = await readStoredText(storedKey);
             if (stored && stored.type === 'pdf') {
-                return cachePdfEntry(
+                const hydrated = cachePdfEntry(
                     id,
                     fileName,
                     stored.pages.map((p) => ({ text: p.text, viewport: p.viewport || {}, items: p.items ?? null })),
                     file,
                 );
+                rememberRasterKey(id, storedKey);
+                return hydrated;
             }
         }
 
@@ -315,7 +329,6 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
             cMapUrl: basePath + 'cmaps/',
             cMapPacked: true,
             standardFontDataUrl: basePath + 'standard_fonts/',
-            isEvalSupported: false,
         }).promise;
         const numPages = pdf.numPages;
         const pageTextData = [];
@@ -342,7 +355,9 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
 
         // Fire and forget: a storage failure must not fail the scan.
         void storePdfText(storedKey, fileName, pageTextData);
-        return cachePdfEntry(id, fileName, pageTextData, file);
+        const extracted = cachePdfEntry(id, fileName, pageTextData, file);
+        rememberRasterKey(id, storedKey);
+        return extracted;
     } catch (err) {
         if (isPasswordException(err)) {
             passwordSkipped++;
@@ -356,7 +371,10 @@ export async function extractPdfText(arrayBuffer, fileName, id, file) {
         // alone, every scanned PDF leaks one for the life of the tab.
         if (pdf) {
             try {
-                await pdf.destroy();
+                // pdf.js 6 removed PDFDocumentProxy.destroy(); the loading task
+                // is what terminates the document and its worker. Swallowing
+                // this used to leak one pdf.js worker per scanned file.
+                await pdf.loadingTask.destroy();
             } catch (e) {
                 /* already torn down */
             }
@@ -508,6 +526,11 @@ export function openFolderFiles(files: File[]) {
 async function processFiles(source) {
     const files = Array.isArray(source) ? source : null;
     if (files && files.length === 0) return;
+
+    // A drop can land before keywords.json has been read and applied. Scanning
+    // now would measure against an empty or stale list and publish a total the
+    // user then watches change a moment later.
+    await whenKeywordsReady();
 
     const viewerMsg = document.getElementById('viewerDropMsg');
     if (viewerMsg) viewerMsg.style.display = 'none';

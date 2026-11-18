@@ -174,6 +174,8 @@ export function resetDocumentState(): void {
     state._docPageOffsets = null;
 
     state._gsPageCacheReady = false;
+    state._pdfInteractive = false;
+    state._rasterKey = undefined;
     state.globalSearchActiveDoc = '';
     state.globalSearchDocIndex = 0;
 }
