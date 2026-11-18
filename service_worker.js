@@ -1,8 +1,16 @@
-const CACHE_NAME = 'kwpdf-f1dccb4c';
+const CACHE_NAME = 'kwpdf-423e8039';
 const NETWORK_FIRST = ['/index.html', '/style.css', '/bundle.js'];
 const LOCAL_ASSETS = [
+    // Precached so every versioned cache holds a copy of the app shell. Besides
+    // being the offline document fallback, this keeps the shell in step with
+    // the CSS/JS that the same build hashed into CACHE_NAME.
+    './index.html',
     './bundle.js',
     './pdf.worker.min.mjs',
+    // Loaded without a query string (index.js sets rendererSrc to the plain
+    // path), so it is precached the same way pdf.worker.min.mjs is. The cache
+    // name still changes on every build, because the hash covers every file.
+    './pdf.renderer.min.mjs',
     './keywords.json',
     './manifest.json',
     './icons/favicon.ico',
@@ -21,8 +29,8 @@ const LOCAL_ASSETS = [
     // hash (worker-pool.js, ocr.ts), and a cache hit needs an exact URL, so the
     // precached entry carries the same query — that is what makes a rebuilt
     // worker script impossible to serve from an older cache.
-    './utils/doc_processor_worker.js?h=f1dccb4c',
-    './utils/ocr_worker.js?h=f1dccb4c',
+    './utils/doc_processor_worker.js?h=423e8039',
+    './utils/ocr_worker.js?h=423e8039',
 ];
 
 self.addEventListener('install', (event) => {
@@ -64,6 +72,12 @@ self.addEventListener('activate', (event) => {
 // `NETWORK_FIRST` holds paths, while a request URL is absolute. The previous
 // `url.includes('./index.html')` test could never match "https://host/index.html",
 // so the app shell was served cache-first and updates waited for a cache bump.
+// Navigations are additionally handled as network-first at the call site: a
+// Pages site opened at its directory root requests "/kwpdf/", which does not
+// end in "/index.html", so a pathname-only check would still serve stale HTML
+// while the freshly built CSS/JS (network-first) came from the network. That
+// mismatch is what made the toolbar render with the new stylesheet against the
+// previous build's markup until a refresh swapped the document over.
 function isNetworkFirst(url) {
     let pathname;
     try {
@@ -103,14 +117,19 @@ function putInCache(request, response) {
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
-    if (isNetworkFirst(event.request.url)) {
+    // Every top-level navigation is network-first, whatever the URL shape:
+    // "/", "/kwpdf/", "/kwpdf/index.html" must all get the current document.
+    if (event.request.mode === 'navigate' || isNetworkFirst(event.request.url)) {
         event.respondWith(
             fetch(event.request)
                 .then((response) => {
                     putInCache(event.request, response);
                     return response;
                 })
-                .catch(() => caches.match(event.request)),
+                .catch(async () => {
+                    const cached = await caches.match(event.request);
+                    return cached || caches.match('./index.html');
+                }),
         );
         return;
     }
